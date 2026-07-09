@@ -10,6 +10,7 @@ app.config.update(
     SECRET_KEY=os.environ.get("SECRET_KEY", "dev-key-2025"),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,
 )
 
 # 用户数据库 - 密码使用哈希存储
@@ -199,6 +200,53 @@ def search():
         user_info = get_safe_user_info(username)
 
     return render_template("index.html", user_info=user_info, keyword=keyword, search_results=results)
+
+
+@app.route("/upload", methods=["GET", "POST"])
+def upload():
+    username = session.get("username")
+    if not username:
+        return redirect("/login")
+
+    if request.method == "POST":
+        upload_dir = os.path.join(app.root_path, "static", "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+
+        file = request.files.get("file")
+        if not file or not file.filename:
+            return render_template("upload.html", error="请选择一个文件")
+
+        # 防止路径穿越：只取文件名部分，忽略目录路径
+        original_filename = file.filename
+        filename = os.path.basename(original_filename)
+        if not filename:
+            return render_template("upload.html", error="文件名无效")
+
+        # 如果文件名因路径穿越被修改，提示用户
+        if filename != original_filename:
+            print(f"[上传] 文件名已规范化: '{original_filename}' → '{filename}'")
+
+        # 超长文件名截断
+        if len(filename) > 200:
+            filename = filename[-200:]
+
+        filepath = os.path.join(upload_dir, filename)
+
+        # 检查同名文件
+        if os.path.exists(filepath):
+            return render_template("upload.html", error=f"文件 {filename} 已存在，请重命名后重试")
+
+        try:
+            file.save(filepath)
+        except Exception as e:
+            print(f"[上传错误] {e}")
+            return render_template("upload.html", error="文件保存失败，请重试")
+
+        file_url = f"/static/uploads/{filename}"
+        print(f"[上传] {username} 上传了文件: {filename}")
+        return render_template("upload.html", success=True, filename=filename, file_url=file_url)
+
+    return render_template("upload.html")
 
 
 @app.route("/logout")
