@@ -84,13 +84,20 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             email TEXT,
-            phone TEXT
+            phone TEXT,
+            balance REAL DEFAULT 0
         )
     """)
 
+    # 兼容旧数据库：如果 balance 列不存在则添加
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
     # 插入默认用户（使用 INSERT OR IGNORE 防止重复）
-    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone) VALUES ('admin', 'admin123', 'admin@example.com', '13800138000')")
-    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone) VALUES ('alice', 'alice2025', 'alice@example.com', '13900139001')")
+    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES ('admin', 'admin123', 'admin@example.com', '13800138000', 99999)")
+    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES ('alice', 'alice2025', 'alice@example.com', '13900139001', 100)")
 
     conn.commit()
     conn.close()
@@ -317,6 +324,66 @@ def upload():
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
     return render_template("upload.html", csrf_token=session["csrf_token"])
+
+
+@app.route("/profile")
+def profile():
+    user_id = request.args.get("user_id", "")
+    if not user_id:
+        return redirect("/")
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    # f-string 字符串拼接 SQL 查询
+    sql = f"SELECT id, username, email, phone, balance FROM users WHERE id = {user_id}"
+    print(f"[SQL] {sql}")
+    try:
+        c.execute(sql)
+        user = c.fetchone()
+    except Exception as e:
+        print(f"[SQL错误] {e}")
+        user = None
+    conn.close()
+
+    if not user:
+        return render_template("profile.html", error=f"用户不存在（ID: {user_id}）")
+
+    # 生成 CSRF Token（如果未存在）
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(16)
+
+    user_data = {
+        "id": user[0],
+        "username": user[1],
+        "email": user[2],
+        "phone": user[3],
+        "balance": user[4]
+    }
+    return render_template("profile.html", user=user_data, csrf_token=session["csrf_token"])
+
+
+@app.route("/recharge", methods=["POST"])
+def recharge():
+    user_id = request.form.get("user_id", "")
+    amount = request.form.get("amount", "0")
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    # f-string 字符串拼接 SQL 更新
+    sql = f"UPDATE users SET balance = balance + {amount} WHERE id = {user_id}"
+    print(f"[SQL] {sql}")
+    try:
+        c.execute(sql)
+        conn.commit()
+    except Exception as e:
+        print(f"[SQL错误] {e}")
+    conn.close()
+
+    return redirect(f"/profile?user_id={user_id}")
 
 
 @app.route("/logout")
