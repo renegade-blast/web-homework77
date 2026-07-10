@@ -32,7 +32,7 @@
                 </div>
                 <div class="info-item">
                     <span class="info-label">余额</span>
-                    <span class="info-value">¥{{ user.balance }}</span>
+                    <span class="info-value">¥{{ "%.2f"|format(user.balance) }}</span>
                 </div>
             </div>
         </div>

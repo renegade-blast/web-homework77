@@ -366,8 +366,25 @@ def profile():
 
 @app.route("/recharge", methods=["POST"])
 def recharge():
-    user_id = request.form.get("user_id", "")
-    amount = request.form.get("amount", "0")
+    # CSRF 验证
+    csrf_token = request.form.get("csrf_token", "")
+    if not csrf_token or csrf_token != session.get("csrf_token"):
+        # 获取 user_id 用于跳转
+        uid = request.form.get("user_id", "")
+        return redirect(f"/profile?user_id={uid}")
+
+    user_id = request.form.get("user_id", "").strip()
+    amount = request.form.get("amount", "").strip()
+
+    if not user_id or not amount:
+        return redirect("/")
+
+    # 尝试转换金额为数字
+    try:
+        amount = float(amount)
+    except ValueError:
+        print(f"[充值错误] 无效金额: {amount}")
+        return redirect(f"/profile?user_id={user_id}")
 
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
@@ -379,6 +396,7 @@ def recharge():
     try:
         c.execute(sql)
         conn.commit()
+        print(f"[充值成功] user_id={user_id}, 金额={amount}")
     except Exception as e:
         print(f"[SQL错误] {e}")
     conn.close()
