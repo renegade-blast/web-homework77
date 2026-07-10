@@ -299,6 +299,17 @@ a {
     cursor: pointer;
 }
 
+.warning-message {
+    background: #fffbeb;
+    color: #d69e2e;
+    border: 1px solid #fefcbf;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    text-align: center;
+}
+
 .success-message {
     background: #f0fff4;
     color: #38a169;

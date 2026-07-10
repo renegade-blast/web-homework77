@@ -1,6 +1,9 @@
 import os
 import sqlite3
-from flask import Flask, render_template, request, redirect, session
+import secrets
+import time
+import mimetypes
+from flask import Flask, render_template, request, redirect, session, send_from_directory, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -12,6 +15,33 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,
 )
+
+# 登录频率限制
+LOGIN_ATTEMPTS = {}
+
+
+def check_login_rate_limit(ip):
+    """简单登录频率限制：同一 IP 10 秒内最多 5 次"""
+    now = time.time()
+    if ip in LOGIN_ATTEMPTS:
+        # 清理过期记录
+        LOGIN_ATTEMPTS[ip] = [t for t in LOGIN_ATTEMPTS[ip] if now - t < 10]
+        if len(LOGIN_ATTEMPTS[ip]) >= 5:
+            return False
+        LOGIN_ATTEMPTS[ip].append(now)
+    else:
+        LOGIN_ATTEMPTS[ip] = [now]
+    return True
+
+
+@app.after_request
+def add_security_headers(response):
+    """添加安全响应头"""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 # 用户数据库 - 密码使用哈希存储
 USERS = {
@@ -106,6 +136,16 @@ def index():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        # CSRF 验证
+        csrf_token = request.form.get("csrf_token", "")
+        if not csrf_token or csrf_token != session.get("csrf_token"):
+            return render_template("login.html", error="表单已过期，请刷新后重试")
+
+        # 登录频率限制
+        client_ip = request.remote_addr or "unknown"
+        if not check_login_rate_limit(client_ip):
+            return render_template("login.html", error="登录过于频繁，请 10 秒后再试")
+
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
 
@@ -127,12 +167,20 @@ def login():
         # 通用错误提示（不明确告知是用户名还是密码错误）
         return render_template("login.html", error="用户名或密码错误")
 
-    return render_template("login.html")
+    # 生成 CSRF Token（如果未存在）
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(16)
+    return render_template("login.html", csrf_token=session["csrf_token"])
 
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
+        # CSRF 验证
+        csrf_token = request.form.get("csrf_token", "")
+        if not csrf_token or csrf_token != session.get("csrf_token"):
+            return render_template("register.html", error="表单已过期，请刷新后重试")
+
         username = (request.form.get("username", "") or "").strip()
         password = request.form.get("password", "") or ""
         email = (request.form.get("email", "") or "").strip()
@@ -145,8 +193,6 @@ def register():
             return render_template("register.html", error="用户名过长")
         if not password:
             return render_template("register.html", error="密码不能为空")
-
-        # 使用 f-string 字符串拼接插入数据库
 
         # 使用 f-string 字符串拼接插入数据库
         db_path = get_db_path()
@@ -166,7 +212,10 @@ def register():
             conn.close()
             return render_template("register.html", error=f"注册失败：{e}")
 
-    return render_template("register.html")
+    # 生成 CSRF Token（如果未存在）
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(16)
+    return render_template("register.html", csrf_token=session["csrf_token"])
 
 
 @app.route("/search")
@@ -209,18 +258,23 @@ def upload():
         return redirect("/login")
 
     if request.method == "POST":
+        # CSRF 验证
+        csrf_token = request.form.get("csrf_token", "")
+        if not csrf_token or csrf_token != session.get("csrf_token"):
+            return render_template("upload.html", error="表单已过期，请刷新后重试", csrf_token=session.get("csrf_token", ""))
+
         upload_dir = os.path.join(app.root_path, "static", "uploads")
         os.makedirs(upload_dir, exist_ok=True)
 
         file = request.files.get("file")
         if not file or not file.filename:
-            return render_template("upload.html", error="请选择一个文件")
+            return render_template("upload.html", error="请选择一个文件", csrf_token=session.get("csrf_token", ""))
 
         # 防止路径穿越：只取文件名部分，忽略目录路径
         original_filename = file.filename
         filename = os.path.basename(original_filename)
         if not filename:
-            return render_template("upload.html", error="文件名无效")
+            return render_template("upload.html", error="文件名无效", csrf_token=session.get("csrf_token", ""))
 
         # 如果文件名因路径穿越被修改，提示用户
         if filename != original_filename:
@@ -234,19 +288,35 @@ def upload():
 
         # 检查同名文件
         if os.path.exists(filepath):
-            return render_template("upload.html", error=f"文件 {filename} 已存在，请重命名后重试")
+            return render_template("upload.html", error=f"文件 {filename} 已存在，请重命名后重试", csrf_token=session.get("csrf_token", ""))
 
         try:
             file.save(filepath)
         except Exception as e:
             print(f"[上传错误] {e}")
-            return render_template("upload.html", error="文件保存失败，请重试")
+            return render_template("upload.html", error="文件保存失败，请重试", csrf_token=session.get("csrf_token", ""))
+
+        # 防止存储型 XSS：将 HTML 文件扩展名改为 .txt 后缀
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in [".html", ".htm", ".shtml", ".xhtml", ".svg"]:
+            safe_filename = filename + ".txt"
+            safe_filepath = os.path.join(upload_dir, safe_filename)
+            os.rename(filepath, safe_filepath)
+            file_url = f"/static/uploads/{safe_filename}"
+            print(f"[上传] 检测到 HTML 文件，已重命名为 {safe_filename}")
+            return render_template("upload.html", success=True, filename=safe_filename, file_url=file_url,
+                                   warning="检测到 HTML 文件，已自动重命名为 .txt 以防止 XSS 攻击",
+                                   csrf_token=session.get("csrf_token", ""))
 
         file_url = f"/static/uploads/{filename}"
         print(f"[上传] {username} 上传了文件: {filename}")
-        return render_template("upload.html", success=True, filename=filename, file_url=file_url)
+        return render_template("upload.html", success=True, filename=filename, file_url=file_url,
+                               csrf_token=session.get("csrf_token", ""))
 
-    return render_template("upload.html")
+    # 生成 CSRF Token（如果未存在）
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(16)
+    return render_template("upload.html", csrf_token=session["csrf_token"])
 
 
 @app.route("/logout")
