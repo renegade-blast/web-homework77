@@ -437,7 +437,7 @@ def recharge():
 
     csrf_token = request.form.get("csrf_token", "")
     if not csrf_token or csrf_token != session.get("csrf_token"):
-        return redirect("/profile?user_id=0")
+        return redirect("/profile")
 
     user_id = request.form.get("user_id", "").strip()
     amount = request.form.get("amount", "").strip()
@@ -450,7 +450,7 @@ def recharge():
     # 验证用户存在且只能给自己充值
     row = get_user_by_id(uid)
     if not row or row[1] != username:
-        return redirect("/")
+        return redirect("/profile")
 
     try:
         amount = float(amount)
