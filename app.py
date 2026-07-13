@@ -123,13 +123,18 @@ def index():
     keyword = (request.args.get("keyword", "") or "").strip()
     search_results = None
     if keyword and username:
+        # 限制关键词长度防止 DoS
+        if len(keyword) > 100:
+            keyword = keyword[:100]
         db_path = get_db_path()
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        sql = f"SELECT id, username, email, phone FROM users WHERE username LIKE '%{keyword}%' OR email LIKE '%{keyword}%'"
-        print(f"[SQL] {sql}")
+        # 使用参数化查询修复 SQL 注入
+        sql = "SELECT id, username, email, phone FROM users WHERE username LIKE ? OR email LIKE ?"
+        param = f"%{keyword}%"
+        print(f"[SQL] {sql} (参数: {param})")
         try:
-            c.execute(sql)
+            c.execute(sql, (param, param))
             search_results = c.fetchall()
         except Exception as e:
             print(f"[SQL错误] {e}")
@@ -219,16 +224,22 @@ def register():
             return render_template("register.html", error="用户名过长")
         if not password:
             return render_template("register.html", error="密码不能为空")
+        if len(password) > 128:
+            return render_template("register.html", error="密码过长")
+        if len(email) > 100:
+            return render_template("register.html", error="邮箱过长")
+        if len(phone) > 20:
+            return render_template("register.html", error="手机号过长")
 
-        # 使用 f-string 字符串拼接插入数据库
+        # 使用参数化查询修复 SQL 注入
         db_path = get_db_path()
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
 
-        sql = f"INSERT INTO users (username, password, email, phone) VALUES ('{username}', '{password}', '{email}', '{phone}')"
-        print(f"[SQL] {sql}")
+        sql = "INSERT INTO users (username, password, email, phone) VALUES (?, ?, ?, ?)"
+        print(f"[SQL] {sql} (参数: {username}, {email}, {phone})")
         try:
-            c.execute(sql)
+            c.execute(sql, (username, password, email, phone))
             conn.commit()
             print(f"[注册成功] 用户 {username} 已添加到数据库")
             conn.close()
@@ -254,15 +265,20 @@ def search():
     if not username:
         return redirect("/login")
 
+    # 限制关键词长度
+    if len(keyword) > 100:
+        keyword = keyword[:100]
+
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
 
-    # f-string 字符串拼接 SQL 查询
-    sql = f"SELECT id, username, email, phone FROM users WHERE username LIKE '%{keyword}%' OR email LIKE '%{keyword}%'"
-    print(f"[SQL] {sql}")
+    # 使用参数化查询修复 SQL 注入
+    sql = "SELECT id, username, email, phone FROM users WHERE username LIKE ? OR email LIKE ?"
+    param = f"%{keyword}%"
+    print(f"[SQL] {sql} (参数: {param})")
     try:
-        c.execute(sql)
+        c.execute(sql, (param, param))
         results = c.fetchall()
     except Exception as e:
         print(f"[SQL错误] {e}")
@@ -347,19 +363,28 @@ def upload():
 
 @app.route("/profile")
 def profile():
-    user_id = request.args.get("user_id", "")
+    user_id = request.args.get("user_id", "").strip()
     if not user_id:
         return redirect("/")
+
+    # 验证 user_id 为数字
+    if not user_id.isdigit():
+        return render_template("profile.html", error="无效的用户 ID")
+
+    # 限制 ID 范围防止溢出
+    uid = int(user_id)
+    if uid < 1 or uid > 1000000:
+        return render_template("profile.html", error="用户 ID 超出有效范围")
 
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
 
-    # f-string 字符串拼接 SQL 查询
-    sql = f"SELECT id, username, email, phone, balance FROM users WHERE id = {user_id}"
-    print(f"[SQL] {sql}")
+    # 使用参数化查询修复 SQL 注入
+    sql = "SELECT id, username, email, phone, balance FROM users WHERE id = ?"
+    print(f"[SQL] {sql} (参数: {uid})")
     try:
-        c.execute(sql)
+        c.execute(sql, (uid,))
         user = c.fetchone()
     except Exception as e:
         print(f"[SQL错误] {e}")
@@ -367,7 +392,7 @@ def profile():
     conn.close()
 
     if not user:
-        return render_template("profile.html", error=f"用户不存在（ID: {user_id}）")
+        return render_template("profile.html", error=f"用户不存在（ID: {uid}）")
 
     # 生成 CSRF Token（如果未存在）
     if "csrf_token" not in session:
@@ -398,29 +423,43 @@ def recharge():
     if not user_id or not amount:
         return redirect("/")
 
-    # 尝试转换金额为数字
+    # 验证 user_id 为数字
+    if not user_id.isdigit():
+        return redirect("/")
+
+    uid = int(user_id)
+    if uid < 1 or uid > 1000000:
+        return redirect("/")
+
+    # 尝试转换金额为数字，并限制范围防止溢出
     try:
         amount = float(amount)
     except ValueError:
         print(f"[充值错误] 无效金额: {amount}")
-        return redirect(f"/profile?user_id={user_id}")
+        return redirect(f"/profile?user_id={uid}")
 
+    # 限制单次充值金额范围，防止整数溢出
+    if abs(amount) > 99999999:
+        print(f"[充值错误] 金额超出限制: {amount}")
+        return redirect(f"/profile?user_id={uid}")
+
+    # 限制余额上限，防止累积溢出
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
 
-    # f-string 字符串拼接 SQL 更新
-    sql = f"UPDATE users SET balance = balance + {amount} WHERE id = {user_id}"
-    print(f"[SQL] {sql}")
+    # 使用参数化查询修复 SQL 注入
+    sql = "UPDATE users SET balance = balance + ? WHERE id = ?"
+    print(f"[SQL] {sql} (参数: {amount}, {uid})")
     try:
-        c.execute(sql)
+        c.execute(sql, (amount, uid))
         conn.commit()
-        print(f"[充值成功] user_id={user_id}, 金额={amount}")
+        print(f"[充值成功] user_id={uid}, 金额={amount}")
     except Exception as e:
         print(f"[SQL错误] {e}")
     conn.close()
 
-    return redirect(f"/profile?user_id={user_id}")
+    return redirect(f"/profile?user_id={uid}")
 
 
 @app.route("/page")
@@ -431,19 +470,27 @@ def page():
 
     page_content = None
     try:
-        page_path = os.path.join(app.root_path, "pages", name)
-        print(f"[页面] 尝试加载: {page_path}")
-        if os.path.exists(page_path):
-            with open(page_path, "r", encoding="utf-8") as f:
-                page_content = f.read()
+        # 安全校验：只允许字母、数字、下划线、中划线
+        import re
+        if not re.match(r'^[a-zA-Z0-9_\-]+$', name):
+            page_content = "<p style='color:#e53e3e;'>页面名称包含非法字符</p>"
         else:
-            page_path_html = page_path + ".html"
-            print(f"[页面] 尝试加载: {page_path_html}")
-            if os.path.exists(page_path_html):
-                with open(page_path_html, "r", encoding="utf-8") as f:
+            # 限制页面名称长度
+            if len(name) > 50:
+                name = name[:50]
+            page_path = os.path.join(app.root_path, "pages", name)
+            print(f"[页面] 尝试加载: {page_path}")
+            if os.path.exists(page_path):
+                with open(page_path, "r", encoding="utf-8") as f:
                     page_content = f.read()
             else:
-                page_content = "<p style='color:#e53e3e;'>页面不存在</p>"
+                page_path_html = page_path + ".html"
+                print(f"[页面] 尝试加载: {page_path_html}")
+                if os.path.exists(page_path_html):
+                    with open(page_path_html, "r", encoding="utf-8") as f:
+                        page_content = f.read()
+                else:
+                    page_content = "<p style='color:#e53e3e;'>页面不存在</p>"
     except Exception as e:
         print(f"[页面加载错误] {e}")
         page_content = "<p style='color:#e53e3e;'>页面加载失败</p>"
