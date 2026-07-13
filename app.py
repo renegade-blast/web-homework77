@@ -1,19 +1,21 @@
 import os
+import re
 import sqlite3
 import secrets
 import time
-import mimetypes
-from flask import Flask, render_template, request, redirect, session, send_from_directory, abort
+from datetime import timedelta
+from flask import Flask, render_template, request, redirect, session
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 
-# Session 安全配置
+# 应用配置
 app.config.update(
     SECRET_KEY=os.environ.get("SECRET_KEY", secrets.token_hex(32)),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=2),
 )
 
 # 登录频率限制
@@ -21,10 +23,9 @@ LOGIN_ATTEMPTS = {}
 
 
 def check_login_rate_limit(ip):
-    """简单登录频率限制：同一 IP 10 秒内最多 5 次"""
+    """同一 IP 10 秒内最多 5 次"""
     now = time.time()
     if ip in LOGIN_ATTEMPTS:
-        # 清理过期记录
         LOGIN_ATTEMPTS[ip] = [t for t in LOGIN_ATTEMPTS[ip] if now - t < 10]
         if len(LOGIN_ATTEMPTS[ip]) >= 5:
             return False
@@ -34,50 +35,17 @@ def check_login_rate_limit(ip):
     return True
 
 
-@app.after_request
-def add_security_headers(response):
-    """添加安全响应头"""
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
-
-# 用户数据库 - 密码使用哈希存储
-USERS = {
-    "admin": {
-        "username": "admin",
-        "password": generate_password_hash("admin123"),
-        "role": "admin",
-        "email": "admin@example.com",
-        "phone": "13800138000",
-        "balance": 99999
-    },
-    "alice": {
-        "username": "alice",
-        "password": generate_password_hash("alice2025"),
-        "role": "user",
-        "email": "alice@example.com",
-        "phone": "13900139001",
-        "balance": 100
-    }
-}
-
-
 def get_db_path():
-    """获取数据库文件路径"""
     db_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     os.makedirs(db_dir, exist_ok=True)
     return os.path.join(db_dir, "users.db")
 
 
 def init_db():
-    """初始化数据库，创建 users 表并插入默认用户"""
+    """初始化数据库 — 唯一用户数据源"""
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
-
-    # 创建 users 表
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,55 +56,93 @@ def init_db():
             balance REAL DEFAULT 0
         )
     """)
-
-    # 兼容旧数据库：如果 balance 列不存在则添加
     try:
         c.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
     except sqlite3.OperationalError:
-        pass  # 列已存在
+        pass
 
-    # 插入默认用户（使用 INSERT OR IGNORE 防止重复，密码使用哈希存储）
-    admin_pwd = generate_password_hash("admin123")
-    alice_pwd = generate_password_hash("alice2025")
-    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES (?, ?, ?, ?, ?)",
-              ("admin", admin_pwd, "admin@example.com", "13800138000", 99999))
-    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES (?, ?, ?, ?, ?)",
-              ("alice", alice_pwd, "alice@example.com", "13900139001", 100))
-
+    # 默认用户 — 密码已哈希
+    for user in [
+        ("admin", "admin123", "admin@example.com", "13800138000", 99999),
+        ("alice", "alice2025", "alice@example.com", "13900139001", 100),
+    ]:
+        c.execute("SELECT id FROM users WHERE username = ?", (user[0],))
+        if not c.fetchone():
+            hashed = generate_password_hash(user[1])
+            c.execute("INSERT INTO users (username, password, email, phone, balance) VALUES (?, ?, ?, ?, ?)",
+                      (user[0], hashed, user[2], user[3], user[4]))
     conn.commit()
     conn.close()
-    print("[数据库初始化完成] data/users.db 已创建，默认用户已插入")
+    print("[数据库初始化完成] data/users.db 已创建")
 
 
 def get_safe_user_info(username):
-    """返回不含密码字段的用户信息"""
-    user = USERS.get(username)
-    if user:
-        return {k: v for k, v in user.items() if k != "password"}
+    """从 SQLite 查询用户信息（不含密码）"""
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("SELECT username, email, phone, balance FROM users WHERE username = ?", (username,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {"username": row[0], "email": row[1], "phone": row[2], "balance": row[3]}
     return None
+
+
+def get_user_by_id(uid):
+    """根据 ID 查询用户"""
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute("SELECT id, username, email, phone, balance FROM users WHERE id = ?", (uid,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
+
+def is_safe_page_name(name):
+    """校验页面名称是否合法"""
+    return bool(re.match(r'^[a-zA-Z0-9_\-]+$', name))
+
+
+def validate_email(email):
+    """简单邮箱格式校验"""
+    return bool(re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email))
+
+
+def validate_phone(phone):
+    """中国手机号格式校验"""
+    return bool(re.match(r'^1[3-9]\d{9}$', phone))
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+# ───────────────── 首页 ─────────────────
 
 
 @app.route("/")
 def index():
     username = session.get("username")
-    user_info = None
-    if username:
-        user_info = get_safe_user_info(username)
+    user_info = get_safe_user_info(username) if username else None
 
-    # 获取搜索关键词和结果（如果有）
+    # 搜索
     keyword = (request.args.get("keyword", "") or "").strip()
     search_results = None
     if keyword and username:
-        # 限制关键词长度防止 DoS
         if len(keyword) > 100:
             keyword = keyword[:100]
         db_path = get_db_path()
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        # 使用参数化查询修复 SQL 注入
         sql = "SELECT id, username, email, phone FROM users WHERE username LIKE ? OR email LIKE ?"
         param = f"%{keyword}%"
-        print(f"[SQL] {sql} (参数: {param})")
         try:
             c.execute(sql, (param, param))
             search_results = c.fetchall()
@@ -145,38 +151,45 @@ def index():
             search_results = []
         conn.close()
 
-    # 获取动态页面内容（如果有）
+    # 动态页面（与 /page 路由保持一致的正则校验）
     page_content = None
     page_name = request.args.get("page", "")
     if page_name:
-        try:
-            page_path = os.path.join(app.root_path, "pages", page_name)
-            if os.path.exists(page_path):
-                with open(page_path, "r", encoding="utf-8") as f:
-                    page_content = f.read()
-            else:
-                page_path_html = page_path + ".html"
-                if os.path.exists(page_path_html):
-                    with open(page_path_html, "r", encoding="utf-8") as f:
+        if not is_safe_page_name(page_name):
+            page_content = "<p style='color:#e53e3e;'>页面名称包含非法字符</p>"
+        else:
+            if len(page_name) > 50:
+                page_name = page_name[:50]
+            try:
+                page_path = os.path.join(app.root_path, "pages", page_name)
+                if os.path.exists(page_path):
+                    with open(page_path, "r", encoding="utf-8") as f:
                         page_content = f.read()
                 else:
-                    page_content = "<p style='color:#e53e3e;'>页面不存在</p>"
-        except Exception as e:
-            print(f"[页面加载错误] {e}")
-            page_content = "<p style='color:#e53e3e;'>页面加载失败</p>"
+                    page_path_html = page_path + ".html"
+                    if os.path.exists(page_path_html):
+                        with open(page_path_html, "r", encoding="utf-8") as f:
+                            page_content = f.read()
+                    else:
+                        page_content = "<p style='color:#e53e3e;'>页面不存在</p>"
+            except Exception as e:
+                print(f"[页面加载错误] {e}")
+                page_content = "<p style='color:#e53e3e;'>页面加载失败</p>"
 
-    return render_template("index.html", user_info=user_info, keyword=keyword, search_results=search_results, page_content=page_content)
+    return render_template("index.html", user_info=user_info, keyword=keyword,
+                           search_results=search_results, page_content=page_content)
+
+
+# ───────────────── 登录 ─────────────────
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        # CSRF 验证
         csrf_token = request.form.get("csrf_token", "")
         if not csrf_token or csrf_token != session.get("csrf_token"):
             return render_template("login.html", error="表单已过期，请刷新后重试")
 
-        # 登录频率限制
         client_ip = request.remote_addr or "unknown"
         if not check_login_rate_limit(client_ip):
             return render_template("login.html", error="登录过于频繁，请 10 秒后再试")
@@ -184,57 +197,38 @@ def login():
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
 
-        # 输入验证 - 非空检查
         if not username or not password:
             return render_template("login.html", error="用户名和密码不能为空")
-
-        # 输入验证 - 长度限制
         if len(username) > 50 or len(password) > 128:
             return render_template("login.html", error="输入内容过长")
 
-        # 安全密码比对（先查 USERS 字典，再查 SQLite）
-        user = USERS.get(username)
-        if user and check_password_hash(user["password"], password):
-            session["username"] = username
-            # 同时同步到 SQLite 确保字典和数据库一致
-            db_path = get_db_path()
-            conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            c.execute("SELECT id FROM users WHERE username = ?", (username,))
-            if not c.fetchone():
-                hashed = generate_password_hash(password)
-                c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES (?, ?, ?, ?, ?)",
-                          (username, hashed, user.get("email", ""), user.get("phone", ""), user.get("balance", 0)))
-                conn.commit()
-            conn.close()
-            user_info = get_safe_user_info(username)
-            return render_template("index.html", user_info=user_info)
-
-        # 尝试从 SQLite 验证
+        # 从 SQLite 验证（唯一数据源）
         db_path = get_db_path()
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
         c.execute("SELECT password FROM users WHERE username = ?", (username,))
         row = c.fetchone()
         conn.close()
+
         if row and check_password_hash(row[0], password):
+            session.permanent = True
             session["username"] = username
-            user_info = get_safe_user_info(username) or {"username": username}
+            user_info = get_safe_user_info(username)
             return render_template("index.html", user_info=user_info)
 
-        # 通用错误提示（不明确告知是用户名还是密码错误）
         return render_template("login.html", error="用户名或密码错误")
 
-    # 生成 CSRF Token（如果未存在）
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
     return render_template("login.html", csrf_token=session["csrf_token"])
 
 
+# ───────────────── 注册 ─────────────────
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
-        # CSRF 验证
         csrf_token = request.form.get("csrf_token", "")
         if not csrf_token or csrf_token != session.get("csrf_token"):
             return render_template("register.html", error="表单已过期，请刷新后重试")
@@ -244,7 +238,7 @@ def register():
         email = (request.form.get("email", "") or "").strip()
         phone = (request.form.get("phone", "") or "").strip()
 
-        # 输入验证
+        # 基础验证
         if not username:
             return render_template("register.html", error="用户名不能为空")
         if len(username) > 50:
@@ -258,33 +252,46 @@ def register():
         if len(phone) > 20:
             return render_template("register.html", error="手机号过长")
 
-        # 密码哈希后再存储
+        # 密码强度校验
+        if len(password) < 6:
+            return render_template("register.html", error="密码长度至少 6 位")
+        if not re.search(r'\d', password):
+            return render_template("register.html", error="密码必须包含数字")
+        if not re.search(r'[a-zA-Z]', password):
+            return render_template("register.html", error="密码必须包含字母")
+
+        # 邮箱格式校验
+        if email and not validate_email(email):
+            return render_template("register.html", error="邮箱格式无效")
+        # 手机号格式校验
+        if phone and not validate_phone(phone):
+            return render_template("register.html", error="手机号格式无效（需为11位中国手机号）")
+
         hashed_pwd = generate_password_hash(password)
 
         db_path = get_db_path()
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-
         sql = "INSERT INTO users (username, password, email, phone) VALUES (?, ?, ?, ?)"
-        print(f"[SQL] {sql} (参数: {username}, {email}, {phone})")
         try:
             c.execute(sql, (username, hashed_pwd, email, phone))
             conn.commit()
-            print(f"[注册成功] 用户 {username} 已添加到数据库")
             conn.close()
             return render_template("login.html", error="注册成功，请登录")
         except sqlite3.IntegrityError:
             conn.close()
             return render_template("register.html", error="用户名已存在")
         except Exception as e:
-            print(f"[SQL错误] {e}")
+            print(f"[注册错误] {e}")
             conn.close()
             return render_template("register.html", error="注册失败，请稍后重试")
 
-    # 生成 CSRF Token（如果未存在）
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
     return render_template("register.html", csrf_token=session["csrf_token"])
+
+
+# ───────────────── 搜索 ─────────────────
 
 
 @app.route("/search")
@@ -297,18 +304,14 @@ def search():
     if not username:
         return redirect("/login")
 
-    # 限制关键词长度
     if len(keyword) > 100:
         keyword = keyword[:100]
 
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
-
-    # 使用参数化查询修复 SQL 注入
     sql = "SELECT id, username, email, phone FROM users WHERE username LIKE ? OR email LIKE ?"
     param = f"%{keyword}%"
-    print(f"[SQL] {sql} (参数: {param})")
     try:
         c.execute(sql, (param, param))
         results = c.fetchall()
@@ -317,12 +320,11 @@ def search():
         results = []
     conn.close()
 
-    username = session.get("username")
-    user_info = None
-    if username:
-        user_info = get_safe_user_info(username)
-
+    user_info = get_safe_user_info(username)
     return render_template("index.html", user_info=user_info, keyword=keyword, search_results=results)
+
+
+# ───────────────── 上传 ─────────────────
 
 
 @app.route("/upload", methods=["GET", "POST"])
@@ -332,7 +334,6 @@ def upload():
         return redirect("/login")
 
     if request.method == "POST":
-        # CSRF 验证
         csrf_token = request.form.get("csrf_token", "")
         if not csrf_token or csrf_token != session.get("csrf_token"):
             return render_template("upload.html", error="表单已过期，请刷新后重试", csrf_token=session.get("csrf_token", ""))
@@ -344,23 +345,16 @@ def upload():
         if not file or not file.filename:
             return render_template("upload.html", error="请选择一个文件", csrf_token=session.get("csrf_token", ""))
 
-        # 防止路径穿越：只取文件名部分，忽略目录路径
         original_filename = file.filename
         filename = os.path.basename(original_filename)
         if not filename:
             return render_template("upload.html", error="文件名无效", csrf_token=session.get("csrf_token", ""))
-
-        # 如果文件名因路径穿越被修改，提示用户
         if filename != original_filename:
             print(f"[上传] 文件名已规范化: '{original_filename}' → '{filename}'")
-
-        # 超长文件名截断
         if len(filename) > 200:
             filename = filename[-200:]
 
         filepath = os.path.join(upload_dir, filename)
-
-        # 检查同名文件
         if os.path.exists(filepath):
             return render_template("upload.html", error=f"文件 {filename} 已存在，请重命名后重试", csrf_token=session.get("csrf_token", ""))
 
@@ -370,131 +364,105 @@ def upload():
             print(f"[上传错误] {e}")
             return render_template("upload.html", error="文件保存失败，请重试", csrf_token=session.get("csrf_token", ""))
 
-        # 防止存储型 XSS：将 HTML 文件扩展名改为 .txt 后缀
         ext = os.path.splitext(filename)[1].lower()
         if ext in [".html", ".htm", ".shtml", ".xhtml", ".svg"]:
             safe_filename = filename + ".txt"
             safe_filepath = os.path.join(upload_dir, safe_filename)
             os.rename(filepath, safe_filepath)
             file_url = f"/static/uploads/{safe_filename}"
-            print(f"[上传] 检测到 HTML 文件，已重命名为 {safe_filename}")
             return render_template("upload.html", success=True, filename=safe_filename, file_url=file_url,
                                    warning="检测到 HTML 文件，已自动重命名为 .txt 以防止 XSS 攻击",
                                    csrf_token=session.get("csrf_token", ""))
 
         file_url = f"/static/uploads/{filename}"
-        print(f"[上传] {username} 上传了文件: {filename}")
         return render_template("upload.html", success=True, filename=filename, file_url=file_url,
                                csrf_token=session.get("csrf_token", ""))
 
-    # 生成 CSRF Token（如果未存在）
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
     return render_template("upload.html", csrf_token=session["csrf_token"])
 
 
+# ───────────────── 个人中心 ─────────────────
+
+
 @app.route("/profile")
 def profile():
+    username = session.get("username")
+    if not username:
+        return redirect("/login")
+
     user_id = request.args.get("user_id", "").strip()
     if not user_id:
         return redirect("/")
-
-    # 验证 user_id 为数字
     if not user_id.isdigit():
         return render_template("profile.html", error="无效的用户 ID")
-
-    # 限制 ID 范围防止溢出
     uid = int(user_id)
     if uid < 1 or uid > 1000000:
         return render_template("profile.html", error="用户 ID 超出有效范围")
 
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-
-    # 使用参数化查询修复 SQL 注入
-    sql = "SELECT id, username, email, phone, balance FROM users WHERE id = ?"
-    print(f"[SQL] {sql} (参数: {uid})")
-    try:
-        c.execute(sql, (uid,))
-        user = c.fetchone()
-    except Exception as e:
-        print(f"[SQL错误] {e}")
-        user = None
-    conn.close()
-
-    if not user:
+    row = get_user_by_id(uid)
+    if not row:
         return render_template("profile.html", error=f"用户不存在（ID: {uid}）")
 
-    # 生成 CSRF Token（如果未存在）
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
 
-    user_data = {
-        "id": user[0],
-        "username": user[1],
-        "email": user[2],
-        "phone": user[3],
-        "balance": user[4]
-    }
+    user_data = {"id": row[0], "username": row[1], "email": row[2], "phone": row[3], "balance": row[4]}
     return render_template("profile.html", user=user_data, csrf_token=session["csrf_token"])
+
+
+# ───────────────── 充值 ─────────────────
 
 
 @app.route("/recharge", methods=["POST"])
 def recharge():
-    # CSRF 验证
+    username = session.get("username")
+    if not username:
+        return redirect("/login")
+
     csrf_token = request.form.get("csrf_token", "")
     if not csrf_token or csrf_token != session.get("csrf_token"):
-        # 获取 user_id 用于跳转
-        uid = request.form.get("user_id", "")
-        return redirect(f"/profile?user_id={uid}")
+        return redirect("/profile?user_id=0")
 
     user_id = request.form.get("user_id", "").strip()
     amount = request.form.get("amount", "").strip()
-
-    if not user_id or not amount:
+    if not user_id or not amount or not user_id.isdigit():
         return redirect("/")
-
-    # 验证 user_id 为数字
-    if not user_id.isdigit():
-        return redirect("/")
-
     uid = int(user_id)
     if uid < 1 or uid > 1000000:
         return redirect("/")
 
-    # 尝试转换金额为数字，并限制范围防止溢出
+    # 验证用户存在
+    row = get_user_by_id(uid)
+    if not row:
+        return redirect("/")
+
     try:
         amount = float(amount)
     except ValueError:
-        print(f"[充值错误] 无效金额: {amount}")
         return redirect(f"/profile?user_id={uid}")
 
-    # 限制单次充值金额范围，防止整数溢出
     if amount <= 0:
-        print(f"[充值错误] 金额必须为正数: {amount}")
         return redirect(f"/profile?user_id={uid}")
     if amount > 99999999:
-        print(f"[充值错误] 金额超出限制: {amount}")
         return redirect(f"/profile?user_id={uid}")
 
-    # 限制余额上限，防止累积溢出
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
-
-    # 使用参数化查询修复 SQL 注入
     sql = "UPDATE users SET balance = balance + ? WHERE id = ?"
-    print(f"[SQL] {sql} (参数: {amount}, {uid})")
     try:
         c.execute(sql, (amount, uid))
         conn.commit()
-        print(f"[充值成功] user_id={uid}, 金额={amount}")
     except Exception as e:
-        print(f"[SQL错误] {e}")
+        print(f"[充值错误] {e}")
     conn.close()
 
     return redirect(f"/profile?user_id={uid}")
+
+
+# ───────────────── 动态页面 ─────────────────
 
 
 @app.route("/page")
@@ -505,22 +473,17 @@ def page():
 
     page_content = None
     try:
-        # 安全校验：只允许字母、数字、下划线、中划线
-        import re
-        if not re.match(r'^[a-zA-Z0-9_\-]+$', name):
+        if not is_safe_page_name(name):
             page_content = "<p style='color:#e53e3e;'>页面名称包含非法字符</p>"
         else:
-            # 限制页面名称长度
             if len(name) > 50:
                 name = name[:50]
             page_path = os.path.join(app.root_path, "pages", name)
-            print(f"[页面] 尝试加载: {page_path}")
             if os.path.exists(page_path):
                 with open(page_path, "r", encoding="utf-8") as f:
                     page_content = f.read()
             else:
                 page_path_html = page_path + ".html"
-                print(f"[页面] 尝试加载: {page_path_html}")
                 if os.path.exists(page_path_html):
                     with open(page_path_html, "r", encoding="utf-8") as f:
                         page_content = f.read()
@@ -530,18 +493,20 @@ def page():
         print(f"[页面加载错误] {e}")
         page_content = "<p style='color:#e53e3e;'>页面加载失败</p>"
 
-    username = session.get("username")
-    user_info = None
-    if username:
-        user_info = get_safe_user_info(username)
-
+    user_info = get_safe_user_info(session.get("username"))
     return render_template("index.html", user_info=user_info, page_content=page_content)
+
+
+# ───────────────── 退出 ─────────────────
 
 
 @app.route("/logout")
 def logout():
-    session.clear()  # 彻底清除所有 session 数据
+    session.clear()
     return redirect("/")
+
+
+# ───────────────── 启动 ─────────────────
 
 
 if __name__ == "__main__":

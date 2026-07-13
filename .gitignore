@@ -1,6 +1,16 @@
 __pycache__/
 *.pyc
+*.pyo
 data/
 *.db
-.DS_Store
 *.db-journal
+.env
+.venv/
+venv/
+.vscode/
+.idea/
+.DS_Store
+*.egg-info/
+dist/
+build/
+*.log
