@@ -82,15 +82,15 @@ def init_db():
 
 
 def get_safe_user_info(username):
-    """从 SQLite 查询用户信息（不含密码）"""
+    """从 SQLite 查询用户信息（含id，不含密码）"""
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
-    c.execute("SELECT username, role, email, phone, balance FROM users WHERE username = ?", (username,))
+    c.execute("SELECT id, username, role, email, phone, balance FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
-        return {"username": row[0], "role": row[1], "email": row[2], "phone": row[3], "balance": row[4]}
+        return {"id": row[0], "username": row[1], "role": row[2], "email": row[3], "phone": row[4], "balance": row[5]}
     return None
 
 
@@ -397,18 +397,27 @@ def profile():
     if not username:
         return redirect("/login")
 
+    # 默认查看自己的资料，也可通过 ?user_id= 查看（IDOR 已验证自己只能看自己）
     user_id = request.args.get("user_id", "").strip()
     if not user_id:
-        return redirect("/")
-    if not user_id.isdigit():
-        return render_template("profile.html", error="无效的用户 ID")
-    uid = int(user_id)
-    if uid < 1 or uid > 1000000:
-        return render_template("profile.html", error="用户 ID 超出有效范围")
+        user_info = get_safe_user_info(username)
+        if not user_info:
+            return redirect("/logout")
+        uid = user_info["id"]
+    else:
+        if not user_id.isdigit():
+            return render_template("profile.html", error="无效的用户 ID")
+        uid = int(user_id)
+        if uid < 1 or uid > 1000000:
+            return render_template("profile.html", error="用户 ID 超出有效范围")
 
     row = get_user_by_id(uid)
     if not row:
         return render_template("profile.html", error=f"用户不存在（ID: {uid}）")
+
+    # 只能查看自己的资料
+    if row[1] != username:
+        return redirect("/")
 
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(16)
