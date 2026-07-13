@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 # Session 安全配置
 app.config.update(
-    SECRET_KEY=os.environ.get("SECRET_KEY", "dev-key-2025"),
+    SECRET_KEY=os.environ.get("SECRET_KEY", secrets.token_hex(32)),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,
@@ -95,9 +95,13 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # 列已存在
 
-    # 插入默认用户（使用 INSERT OR IGNORE 防止重复）
-    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES ('admin', 'admin123', 'admin@example.com', '13800138000', 99999)")
-    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES ('alice', 'alice2025', 'alice@example.com', '13900139001', 100)")
+    # 插入默认用户（使用 INSERT OR IGNORE 防止重复，密码使用哈希存储）
+    admin_pwd = generate_password_hash("admin123")
+    alice_pwd = generate_password_hash("alice2025")
+    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES (?, ?, ?, ?, ?)",
+              ("admin", admin_pwd, "admin@example.com", "13800138000", 99999))
+    c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES (?, ?, ?, ?, ?)",
+              ("alice", alice_pwd, "alice@example.com", "13900139001", 100))
 
     conn.commit()
     conn.close()
@@ -188,11 +192,34 @@ def login():
         if len(username) > 50 or len(password) > 128:
             return render_template("login.html", error="输入内容过长")
 
-        # 安全密码比对（使用哈希而非明文 ==）
+        # 安全密码比对（先查 USERS 字典，再查 SQLite）
         user = USERS.get(username)
         if user and check_password_hash(user["password"], password):
             session["username"] = username
+            # 同时同步到 SQLite 确保字典和数据库一致
+            db_path = get_db_path()
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            c.execute("SELECT id FROM users WHERE username = ?", (username,))
+            if not c.fetchone():
+                hashed = generate_password_hash(password)
+                c.execute("INSERT OR IGNORE INTO users (username, password, email, phone, balance) VALUES (?, ?, ?, ?, ?)",
+                          (username, hashed, user.get("email", ""), user.get("phone", ""), user.get("balance", 0)))
+                conn.commit()
+            conn.close()
             user_info = get_safe_user_info(username)
+            return render_template("index.html", user_info=user_info)
+
+        # 尝试从 SQLite 验证
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        c.execute("SELECT password FROM users WHERE username = ?", (username,))
+        row = c.fetchone()
+        conn.close()
+        if row and check_password_hash(row[0], password):
+            session["username"] = username
+            user_info = get_safe_user_info(username) or {"username": username}
             return render_template("index.html", user_info=user_info)
 
         # 通用错误提示（不明确告知是用户名还是密码错误）
@@ -231,7 +258,9 @@ def register():
         if len(phone) > 20:
             return render_template("register.html", error="手机号过长")
 
-        # 使用参数化查询修复 SQL 注入
+        # 密码哈希后再存储
+        hashed_pwd = generate_password_hash(password)
+
         db_path = get_db_path()
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
@@ -239,15 +268,18 @@ def register():
         sql = "INSERT INTO users (username, password, email, phone) VALUES (?, ?, ?, ?)"
         print(f"[SQL] {sql} (参数: {username}, {email}, {phone})")
         try:
-            c.execute(sql, (username, password, email, phone))
+            c.execute(sql, (username, hashed_pwd, email, phone))
             conn.commit()
             print(f"[注册成功] 用户 {username} 已添加到数据库")
             conn.close()
             return render_template("login.html", error="注册成功，请登录")
+        except sqlite3.IntegrityError:
+            conn.close()
+            return render_template("register.html", error="用户名已存在")
         except Exception as e:
             print(f"[SQL错误] {e}")
             conn.close()
-            return render_template("register.html", error=f"注册失败：{e}")
+            return render_template("register.html", error="注册失败，请稍后重试")
 
     # 生成 CSRF Token（如果未存在）
     if "csrf_token" not in session:
