@@ -1,11 +1,16 @@
 import os
 import re
+import logging
 import sqlite3
 import secrets
 import time
 from datetime import timedelta
 from flask import Flask, render_template, request, redirect, session
 from werkzeug.security import generate_password_hash, check_password_hash
+
+# 日志配置
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -78,7 +83,7 @@ def init_db():
                       (user[0], hashed, user[2], user[3], user[4], user[5]))
     conn.commit()
     conn.close()
-    print("[数据库初始化完成] data/users.db 已创建")
+    logger.info("数据库初始化完成: data/users.db 已创建")
 
 
 def get_safe_user_info(username):
@@ -152,7 +157,7 @@ def index():
             c.execute(sql, (param, param))
             search_results = c.fetchall()
         except Exception as e:
-            print(f"[SQL错误] {e}")
+            logger.error(f"SQL查询错误: {e}")
             search_results = []
         conn.close()
 
@@ -178,7 +183,7 @@ def index():
                     else:
                         page_content = "<p style='color:#e53e3e;'>页面不存在</p>"
             except Exception as e:
-                print(f"[页面加载错误] {e}")
+                logger.error(f"页面加载错误: {e}")
                 page_content = "<p style='color:#e53e3e;'>页面加载失败</p>"
 
     return render_template("index.html", user_info=user_info, keyword=keyword,
@@ -218,6 +223,8 @@ def login():
         if row and check_password_hash(row[0], password):
             session.permanent = True
             session["username"] = username
+            # 登录成功后轮转 CSRF Token
+            session["csrf_token"] = secrets.token_hex(16)
             user_info = get_safe_user_info(username)
             return render_template("index.html", user_info=user_info)
 
@@ -287,7 +294,7 @@ def register():
             conn.close()
             return render_template("register.html", error="用户名已存在")
         except Exception as e:
-            print(f"[注册错误] {e}")
+            logger.error(f"注册错误: {e}")
             conn.close()
             return render_template("register.html", error="注册失败，请稍后重试")
 
@@ -321,7 +328,7 @@ def search():
         c.execute(sql, (param, param))
         results = c.fetchall()
     except Exception as e:
-        print(f"[SQL错误] {e}")
+        logger.error(f"SQL错误: {e}")
         results = []
     conn.close()
 
@@ -355,7 +362,7 @@ def upload():
         if not filename:
             return render_template("upload.html", error="文件名无效", csrf_token=session.get("csrf_token", ""))
         if filename != original_filename:
-            print(f"[上传] 文件名已规范化: '{original_filename}' → '{filename}'")
+            logger.info(f"文件名已规范化: '{original_filename}' → '{filename}'")
         if len(filename) > 200:
             filename = filename[-200:]
 
@@ -366,7 +373,7 @@ def upload():
         try:
             file.save(filepath)
         except Exception as e:
-            print(f"[上传错误] {e}")
+            logger.error(f"上传错误: {e}")
             return render_template("upload.html", error="文件保存失败，请重试", csrf_token=session.get("csrf_token", ""))
 
         ext = os.path.splitext(filename)[1].lower()
@@ -470,7 +477,7 @@ def recharge():
         c.execute(sql, (amount, uid))
         conn.commit()
     except Exception as e:
-        print(f"[充值错误] {e}")
+        logger.error(f"充值错误: {e}")
     conn.close()
 
     return redirect(f"/profile?user_id={uid}")
