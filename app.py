@@ -51,6 +51,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
+            role TEXT DEFAULT 'user',
             email TEXT,
             phone TEXT,
             balance REAL DEFAULT 0
@@ -60,17 +61,21 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+    except sqlite3.OperationalError:
+        pass
 
     # 默认用户 — 密码已哈希
     for user in [
-        ("admin", "admin123", "admin@example.com", "13800138000", 99999),
-        ("alice", "alice2025", "alice@example.com", "13900139001", 100),
+        ("admin", "admin123", "admin", "admin@example.com", "13800138000", 99999),
+        ("alice", "alice2025", "user", "alice@example.com", "13900139001", 100),
     ]:
         c.execute("SELECT id FROM users WHERE username = ?", (user[0],))
         if not c.fetchone():
             hashed = generate_password_hash(user[1])
-            c.execute("INSERT INTO users (username, password, email, phone, balance) VALUES (?, ?, ?, ?, ?)",
-                      (user[0], hashed, user[2], user[3], user[4]))
+            c.execute("INSERT INTO users (username, password, role, email, phone, balance) VALUES (?, ?, ?, ?, ?, ?)",
+                      (user[0], hashed, user[2], user[3], user[4], user[5]))
     conn.commit()
     conn.close()
     print("[数据库初始化完成] data/users.db 已创建")
@@ -81,11 +86,11 @@ def get_safe_user_info(username):
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
-    c.execute("SELECT username, email, phone, balance FROM users WHERE username = ?", (username,))
+    c.execute("SELECT username, role, email, phone, balance FROM users WHERE username = ?", (username,))
     row = c.fetchone()
     conn.close()
     if row:
-        return {"username": row[0], "email": row[1], "phone": row[2], "balance": row[3]}
+        return {"username": row[0], "role": row[1], "email": row[2], "phone": row[3], "balance": row[4]}
     return None
 
 
@@ -272,9 +277,9 @@ def register():
         db_path = get_db_path()
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        sql = "INSERT INTO users (username, password, email, phone) VALUES (?, ?, ?, ?)"
+        sql = "INSERT INTO users (username, password, role, email, phone) VALUES (?, ?, ?, ?, ?)"
         try:
-            c.execute(sql, (username, hashed_pwd, email, phone))
+            c.execute(sql, (username, hashed_pwd, "user", email, phone))
             conn.commit()
             conn.close()
             return render_template("login.html", error="注册成功，请登录")
@@ -433,9 +438,9 @@ def recharge():
     if uid < 1 or uid > 1000000:
         return redirect("/")
 
-    # 验证用户存在
+    # 验证用户存在且只能给自己充值
     row = get_user_by_id(uid)
-    if not row:
+    if not row or row[1] != username:
         return redirect("/")
 
     try:
