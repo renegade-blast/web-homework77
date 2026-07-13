@@ -3,7 +3,14 @@
 {% block title %}用户管理系统 - 首页{% endblock %}
 
 {% block content %}
-    {% if user_info %}
+    {% if page_content %}
+        <div class="card page-content-card">
+            {{ page_content | safe }}
+            <div class="action-bar">
+                <a href="/" class="btn btn-primary">返回首页</a>
+            </div>
+        </div>
+    {% elif user_info %}
         <div class="card">
             <h2>欢迎回来，{{ user_info.username }}！</h2>
             <div class="user-info-list">

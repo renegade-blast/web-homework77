@@ -285,6 +285,43 @@ a {
     border-bottom: none;
 }
 
+/* ===== 动态页面内容 ===== */
+.page-content-card {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.page-content-card h2 {
+    color: #333;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.page-content-card h3 {
+    color: #555;
+    margin: 20px 0 10px;
+    font-size: 17px;
+}
+
+.page-content-card ul {
+    margin: 10px 0;
+    padding-left: 24px;
+}
+
+.page-content-card li {
+    margin-bottom: 6px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.page-content-card p {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #555;
+    margin: 8px 0;
+}
+
 /* ===== 上传页面 ===== */
 .upload-card {
     max-width: 500px;

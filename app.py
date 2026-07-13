@@ -126,7 +126,6 @@ def index():
         db_path = get_db_path()
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
-        # f-string 字符串拼接 SQL 查询
         sql = f"SELECT id, username, email, phone FROM users WHERE username LIKE '%{keyword}%' OR email LIKE '%{keyword}%'"
         print(f"[SQL] {sql}")
         try:
@@ -137,7 +136,27 @@ def index():
             search_results = []
         conn.close()
 
-    return render_template("index.html", user_info=user_info, keyword=keyword, search_results=search_results)
+    # 获取动态页面内容（如果有）
+    page_content = None
+    page_name = request.args.get("page", "")
+    if page_name:
+        try:
+            page_path = os.path.join(app.root_path, "pages", page_name)
+            if os.path.exists(page_path):
+                with open(page_path, "r", encoding="utf-8") as f:
+                    page_content = f.read()
+            else:
+                page_path_html = page_path + ".html"
+                if os.path.exists(page_path_html):
+                    with open(page_path_html, "r", encoding="utf-8") as f:
+                        page_content = f.read()
+                else:
+                    page_content = "<p style='color:#e53e3e;'>页面不存在</p>"
+        except Exception as e:
+            print(f"[页面加载错误] {e}")
+            page_content = "<p style='color:#e53e3e;'>页面加载失败</p>"
+
+    return render_template("index.html", user_info=user_info, keyword=keyword, search_results=search_results, page_content=page_content)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -402,6 +421,39 @@ def recharge():
     conn.close()
 
     return redirect(f"/profile?user_id={user_id}")
+
+
+@app.route("/page")
+def page():
+    name = request.args.get("name", "")
+    if not name:
+        return redirect("/")
+
+    page_content = None
+    try:
+        page_path = os.path.join(app.root_path, "pages", name)
+        print(f"[页面] 尝试加载: {page_path}")
+        if os.path.exists(page_path):
+            with open(page_path, "r", encoding="utf-8") as f:
+                page_content = f.read()
+        else:
+            page_path_html = page_path + ".html"
+            print(f"[页面] 尝试加载: {page_path_html}")
+            if os.path.exists(page_path_html):
+                with open(page_path_html, "r", encoding="utf-8") as f:
+                    page_content = f.read()
+            else:
+                page_content = "<p style='color:#e53e3e;'>页面不存在</p>"
+    except Exception as e:
+        print(f"[页面加载错误] {e}")
+        page_content = "<p style='color:#e53e3e;'>页面加载失败</p>"
+
+    username = session.get("username")
+    user_info = None
+    if username:
+        user_info = get_safe_user_info(username)
+
+    return render_template("index.html", user_info=user_info, page_content=page_content)
 
 
 @app.route("/logout")
