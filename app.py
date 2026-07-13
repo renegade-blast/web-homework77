@@ -439,7 +439,10 @@ def recharge():
         return redirect(f"/profile?user_id={uid}")
 
     # 限制单次充值金额范围，防止整数溢出
-    if abs(amount) > 99999999:
+    if amount <= 0:
+        print(f"[充值错误] 金额必须为正数: {amount}")
+        return redirect(f"/profile?user_id={uid}")
+    if amount > 99999999:
         print(f"[充值错误] 金额超出限制: {amount}")
         return redirect(f"/profile?user_id={uid}")
 
