@@ -53,6 +53,7 @@
         <div class="card">
             <h2>修改密码</h2>
             <form method="post" action="/change-password">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="username" value="{{ user.username }}">
                 <div class="form-group">
                     <label for="new_password">新密码</label>

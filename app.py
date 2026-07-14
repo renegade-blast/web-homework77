@@ -523,15 +523,41 @@ def page():
 
 @app.route("/change-password", methods=["POST"])
 def change_password():
-    """修改密码 — 故意不验证原密码、不验证CSRF、可修改任意用户"""
     username = session.get("username")
     if not username:
         return redirect("/login")
 
-    target_user = request.form.get("username", "").strip()
-    new_password = request.form.get("new_password", "")
+    # CSRF 验证
+    csrf_token = request.form.get("csrf_token", "")
+    if not csrf_token or csrf_token != session.get("csrf_token"):
+        logger.warning(f"密码修改CSRF失败: session_token='{session.get('csrf_token','')}', form_token='{csrf_token}'")
+        return redirect("/profile")
 
-    if not target_user or not new_password:
+    # 只允许修改自己的密码
+    target_user = request.form.get("username", "").strip()
+    if target_user != username:
+        logger.warning(f"越权修改密码被拦截: 操作者={username}, 目标={target_user}")
+        return redirect("/profile")
+
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    if not new_password or not confirm_password:
+        logger.warning("密码修改: 密码为空")
+        return redirect("/profile")
+    if new_password != confirm_password:
+        logger.warning("密码修改: 两次密码不一致")
+        return redirect("/profile")
+
+    # 密码强度校验
+    if len(new_password) < 6:
+        logger.warning("密码修改: 密码过短")
+        return redirect("/profile")
+    if not re.search(r'\d', new_password):
+        logger.warning("密码修改: 缺少数字")
+        return redirect("/profile")
+    if not re.search(r'[a-zA-Z]', new_password):
+        logger.warning("密码修改: 缺少字母")
         return redirect("/profile")
 
     hashed_pwd = generate_password_hash(new_password)
@@ -540,11 +566,11 @@ def change_password():
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     sql = "UPDATE users SET password = ? WHERE username = ?"
-    logger.info(f"密码修改: 操作者={username}, 目标用户={target_user}")
+    logger.info(f"密码修改: 操作者={username}")
     try:
-        c.execute(sql, (hashed_pwd, target_user))
+        c.execute(sql, (hashed_pwd, username))
         conn.commit()
-        logger.info(f"密码修改成功: {target_user}")
+        logger.info(f"密码修改成功: {username}")
     except Exception as e:
         logger.error(f"密码修改失败: {e}")
     conn.close()
