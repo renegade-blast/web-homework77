@@ -518,6 +518,40 @@ def page():
     return render_template("index.html", user_info=user_info, page_content=page_content)
 
 
+# ───────────────── 修改密码 ─────────────────
+
+
+@app.route("/change-password", methods=["POST"])
+def change_password():
+    """修改密码 — 故意不验证原密码、不验证CSRF、可修改任意用户"""
+    username = session.get("username")
+    if not username:
+        return redirect("/login")
+
+    target_user = request.form.get("username", "").strip()
+    new_password = request.form.get("new_password", "")
+
+    if not target_user or not new_password:
+        return redirect("/profile")
+
+    hashed_pwd = generate_password_hash(new_password)
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    sql = "UPDATE users SET password = ? WHERE username = ?"
+    logger.info(f"密码修改: 操作者={username}, 目标用户={target_user}")
+    try:
+        c.execute(sql, (hashed_pwd, target_user))
+        conn.commit()
+        logger.info(f"密码修改成功: {target_user}")
+    except Exception as e:
+        logger.error(f"密码修改失败: {e}")
+    conn.close()
+
+    return redirect("/profile")
+
+
 # ───────────────── 退出 ─────────────────
 
 
