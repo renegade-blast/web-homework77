@@ -4,6 +4,8 @@ import logging
 import sqlite3
 import secrets
 import time
+import urllib.request
+import urllib.error
 from datetime import timedelta
 from flask import Flask, render_template, request, redirect, session
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -576,6 +578,50 @@ def change_password():
     conn.close()
 
     return redirect("/profile")
+
+
+# ───────────────── URL 抓取 ─────────────────
+
+
+@app.route("/fetch-url", methods=["POST"])
+def fetch_url():
+    username = session.get("username")
+    if not username:
+        return redirect("/login")
+
+    url = request.form.get("url", "").strip()
+    if not url:
+        user_info = get_safe_user_info(username)
+        return render_template("index.html", user_info=user_info, fetch_error="请输入 URL")
+
+    fetch_status = None
+    fetch_content = None
+    fetch_error = None
+
+    try:
+        logger.info(f"URL抓取: {username} 请求 {url}")
+        resp = urllib.request.urlopen(url, timeout=10)
+        fetch_status = resp.status
+        raw = resp.read()
+        # 尝试解码，失败则显示二进制长度
+        try:
+            fetch_content = raw.decode("utf-8")[:5000]
+        except UnicodeDecodeError:
+            fetch_content = f"[二进制内容，共 {len(raw)} 字节]"
+        logger.info(f"URL抓取成功: {url} → 状态码 {fetch_status}")
+    except urllib.error.HTTPError as e:
+        fetch_status = e.code
+        fetch_content = str(e.reason)[:5000]
+        fetch_error = f"HTTP 错误: {e.code}"
+    except urllib.error.URLError as e:
+        fetch_error = f"URL 错误: {e.reason}"
+    except Exception as e:
+        fetch_error = f"请求失败: {str(e)[:200]}"
+
+    user_info = get_safe_user_info(username)
+    return render_template("index.html", user_info=user_info,
+                           fetch_url=url, fetch_status=fetch_status,
+                           fetch_content=fetch_content, fetch_error=fetch_error)
 
 
 # ───────────────── 退出 ─────────────────
