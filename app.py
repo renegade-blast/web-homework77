@@ -599,7 +599,9 @@ def fetch_url():
     fetch_error = None
 
     try:
-        logger.info(f"URL抓取: {username} 请求 {url}")
+        # 记录日志时截断 URL，防止日志注入
+        log_url = url[:200] + "..." if len(url) > 200 else url
+        logger.info(f"URL抓取: {username} 请求 {log_url}")
         resp = urllib.request.urlopen(url, timeout=10)
         fetch_status = resp.status
         # 分块读取，最大 5120 字节，防止内存耗尽
@@ -618,7 +620,7 @@ def fetch_url():
             fetch_content = raw.decode("utf-8")[:5000]
         except UnicodeDecodeError:
             fetch_content = f"[二进制内容，共 {total_read} 字节]"
-        logger.info(f"URL抓取成功: {url} → 状态码 {fetch_status}")
+        logger.info(f"URL抓取成功: {log_url} → 状态码 {fetch_status}")
     except urllib.error.HTTPError as e:
         fetch_status = e.code
         fetch_content = str(e.reason)[:5000]
