@@ -583,6 +583,42 @@ def change_password():
 # ───────────────── URL 抓取 ─────────────────
 
 
+def is_safe_url(url):
+    """检查 URL 是否安全：仅允许 http/https、禁止内网地址"""
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except Exception:
+        return False
+
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    hostname = parsed.hostname.lower() if parsed.hostname else ""
+    if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"):
+        return False
+    if hostname.startswith("10."):
+        return False
+    if hostname.startswith("172."):
+        try:
+            second = int(hostname.split(".")[1])
+            if 16 <= second <= 31:
+                return False
+        except (IndexError, ValueError):
+            pass
+    if hostname.startswith("192.168."):
+        return False
+    if hostname.startswith("169.254."):
+        return False
+    if hostname.startswith("100."):
+        try:
+            second = int(hostname.split(".")[1])
+            if 64 <= second <= 127:
+                return False
+        except (IndexError, ValueError):
+            pass
+    return True
+
+
 @app.route("/fetch-url", methods=["POST"])
 def fetch_url():
     username = session.get("username")
@@ -599,28 +635,29 @@ def fetch_url():
     fetch_error = None
 
     try:
-        # 记录日志时截断 URL，防止日志注入
-        log_url = url[:200] + "..." if len(url) > 200 else url
-        logger.info(f"URL抓取: {username} 请求 {log_url}")
-        resp = urllib.request.urlopen(url, timeout=10)
-        fetch_status = resp.status
-        # 分块读取，最大 5120 字节，防止内存耗尽
-        max_size = 5120
-        chunks = []
-        total_read = 0
-        while total_read < max_size:
-            chunk = resp.read(min(1024, max_size - total_read))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            total_read += len(chunk)
-        raw = b"".join(chunks)
-        # 尝试解码，失败则显示二进制长度
-        try:
-            fetch_content = raw.decode("utf-8")[:5000]
-        except UnicodeDecodeError:
-            fetch_content = f"[二进制内容，共 {total_read} 字节]"
-        logger.info(f"URL抓取成功: {log_url} → 状态码 {fetch_status}")
+        if not is_safe_url(url):
+            fetch_error = "不支持的协议或禁止访问的地址"
+        else:
+            log_url = url[:200] + "..." if len(url) > 200 else url
+            logger.info(f"URL抓取: {username} 请求 {log_url}")
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            resp = urllib.request.urlopen(req, timeout=10)
+            fetch_status = resp.status
+            max_size = 5120
+            chunks = []
+            total_read = 0
+            while total_read < max_size:
+                chunk = resp.read(min(1024, max_size - total_read))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total_read += len(chunk)
+            raw = b"".join(chunks)
+            try:
+                fetch_content = raw.decode("utf-8")[:5000]
+            except UnicodeDecodeError:
+                fetch_content = f"[二进制内容，共 {total_read} 字节]"
+            logger.info(f"URL抓取成功: {log_url} → 状态码 {fetch_status}")
     except urllib.error.HTTPError as e:
         fetch_status = e.code
         fetch_content = str(e.reason)[:5000]
