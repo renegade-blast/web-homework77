@@ -602,12 +602,22 @@ def fetch_url():
         logger.info(f"URL抓取: {username} 请求 {url}")
         resp = urllib.request.urlopen(url, timeout=10)
         fetch_status = resp.status
-        raw = resp.read()
+        # 分块读取，最大 5120 字节，防止内存耗尽
+        max_size = 5120
+        chunks = []
+        total_read = 0
+        while total_read < max_size:
+            chunk = resp.read(min(1024, max_size - total_read))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total_read += len(chunk)
+        raw = b"".join(chunks)
         # 尝试解码，失败则显示二进制长度
         try:
             fetch_content = raw.decode("utf-8")[:5000]
         except UnicodeDecodeError:
-            fetch_content = f"[二进制内容，共 {len(raw)} 字节]"
+            fetch_content = f"[二进制内容，共 {total_read} 字节]"
         logger.info(f"URL抓取成功: {url} → 状态码 {fetch_status}")
     except urllib.error.HTTPError as e:
         fetch_status = e.code

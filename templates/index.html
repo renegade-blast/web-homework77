@@ -97,9 +97,11 @@
                 <div class="error-message">{{ fetch_error }}</div>
             {% endif %}
 
-            {% if fetch_status %}
+            {% if fetch_status or fetch_content %}
                 <div class="fetch-results">
+                    {% if fetch_status %}
                     <h3>状态码: {{ fetch_status }}</h3>
+                    {% endif %}
                     <pre class="fetch-content">{{ fetch_content }}</pre>
                 </div>
             {% endif %}
