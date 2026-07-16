@@ -678,6 +678,24 @@ def fetch_url():
 # ───────────────── Ping 诊断 ─────────────────
 
 
+def is_valid_ping_target(target):
+    """校验 Ping 目标：只允许 IP 地址或合法域名"""
+    # 允许 IP v4 地址
+    ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+    if re.match(ip_pattern, target):
+        # 验证每个段在 0-255 范围
+        parts = target.split(".")
+        if all(0 <= int(p) <= 255 for p in parts):
+            return True
+
+    # 允许合法域名（字母、数字、点、中划线）
+    domain_pattern = r'^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$'
+    if re.match(domain_pattern, target):
+        return True
+
+    return False
+
+
 @app.route("/ping", methods=["GET", "POST"])
 def ping():
     username = session.get("username")
@@ -688,20 +706,26 @@ def ping():
     ping_error = None
 
     if request.method == "POST":
-        ip = request.form.get("ip", "").strip()
-        if not ip:
-            ping_error = "请输入 IP 地址"
+        target = request.form.get("ip", "").strip()
+        if not target:
+            ping_error = "请输入 IP 地址或域名"
+        elif not is_valid_ping_target(target):
+            ping_error = "无效的 IP 地址或域名格式"
         else:
-            cmd = f"ping -c 3 {ip}"
-            logger.info(f"Ping: {username} 执行 {cmd}")
+            logger.info(f"Ping: {username} 请求 {target}")
             try:
-                output = subprocess.check_output(cmd, shell=True, timeout=30, stderr=subprocess.STDOUT)
+                # 使用参数列表方式，禁用 shell=True 防止命令注入
+                output = subprocess.check_output(
+                    ["ping", "-c", "3", target],
+                    timeout=30,
+                    stderr=subprocess.STDOUT
+                )
                 ping_result = output.decode("utf-8", errors="replace")
             except subprocess.TimeoutExpired:
                 ping_error = "Ping 超时（30 秒）"
             except subprocess.CalledProcessError as e:
                 ping_result = e.output.decode("utf-8", errors="replace")
-                ping_error = f"命令执行失败，返回码: {e.returncode}"
+                ping_error = f"Ping 失败，返回码: {e.returncode}"
             except Exception as e:
                 ping_error = f"执行错误: {str(e)}"
 
