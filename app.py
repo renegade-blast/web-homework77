@@ -4,6 +4,8 @@ import logging
 import sqlite3
 import secrets
 import time
+import subprocess
+import platform
 import urllib.request
 import urllib.error
 from datetime import timedelta
@@ -671,6 +673,39 @@ def fetch_url():
     return render_template("index.html", user_info=user_info,
                            fetch_url=url, fetch_status=fetch_status,
                            fetch_content=fetch_content, fetch_error=fetch_error)
+
+
+# ───────────────── Ping 诊断 ─────────────────
+
+
+@app.route("/ping", methods=["GET", "POST"])
+def ping():
+    username = session.get("username")
+    if not username:
+        return redirect("/login")
+
+    ping_result = None
+    ping_error = None
+
+    if request.method == "POST":
+        ip = request.form.get("ip", "").strip()
+        if not ip:
+            ping_error = "请输入 IP 地址"
+        else:
+            cmd = f"ping -c 3 {ip}"
+            logger.info(f"Ping: {username} 执行 {cmd}")
+            try:
+                output = subprocess.check_output(cmd, shell=True, timeout=30, stderr=subprocess.STDOUT)
+                ping_result = output.decode("utf-8", errors="replace")
+            except subprocess.TimeoutExpired:
+                ping_error = "Ping 超时（30 秒）"
+            except subprocess.CalledProcessError as e:
+                ping_result = e.output.decode("utf-8", errors="replace")
+                ping_error = f"命令执行失败，返回码: {e.returncode}"
+            except Exception as e:
+                ping_error = f"执行错误: {str(e)}"
+
+    return render_template("ping.html", ping_result=ping_result, ping_error=ping_error)
 
 
 # ───────────────── 退出 ─────────────────

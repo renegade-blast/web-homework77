@@ -333,6 +333,37 @@ a {
     margin-bottom: 8px;
 }
 
+.ping-output {
+    margin-top: 16px;
+}
+
+.ping-header {
+    background: #333;
+    color: #0f0;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-family: "Courier New", monospace;
+    border-radius: 8px 8px 0 0;
+    border: 1px solid #444;
+    border-bottom: none;
+}
+
+.ping-console {
+    background: #1a1a1a;
+    color: #00ff00;
+    padding: 14px;
+    font-size: 13px;
+    font-family: "Courier New", monospace;
+    border-radius: 0 0 8px 8px;
+    border: 1px solid #444;
+    border-top: none;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.6;
+}
+
 .page-content-card li {
     margin-bottom: 6px;
     font-size: 14px;
