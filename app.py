@@ -1,11 +1,13 @@
 import os
 import re
+import json
 import logging
 import sqlite3
 import secrets
 import time
 import subprocess
 import platform
+import xml.etree.ElementTree as ET
 import urllib.request
 import urllib.error
 from datetime import timedelta
@@ -730,6 +732,72 @@ def ping():
                 ping_error = f"执行错误: {str(e)}"
 
     return render_template("ping.html", ping_result=ping_result, ping_error=ping_error)
+
+
+# ───────────────── XML 导入 ─────────────────
+
+
+@app.route("/xml-import", methods=["GET", "POST"])
+def xml_import():
+    username = session.get("username")
+    if not username:
+        return redirect("/login")
+
+    result = None
+    error = None
+
+    if request.method == "POST":
+        xml_data = request.form.get("xml_data", "").strip()
+        if not xml_data:
+            error = "请输入 XML 数据"
+        else:
+            logger.info(f"XML导入: {username} 提交了 XML 数据 ({len(xml_data)} 字节)")
+
+            # 检测 XML 实体定义，提取 SYSTEM 文件路径
+            entity_pattern = re.compile(r'<!ENTITY\s+\w+\s+SYSTEM\s+["\']([^"\']+)["\']')
+            matches = entity_pattern.findall(xml_data)
+
+            entity_replacements = {}
+            for filepath in matches:
+                logger.info(f"XML导入: 发现实体引用文件路径: {filepath}")
+                # 处理 file:// 协议前缀
+                local_path = filepath
+                if local_path.startswith("file://"):
+                    local_path = local_path[7:]
+                try:
+                    with open(local_path, "r", encoding="utf-8") as f:
+                        file_content = f.read()
+                    entity_replacements[filepath] = file_content
+                    logger.info(f"XML导入: 已读取文件 {local_path} ({len(file_content)} 字节)")
+                except Exception as e:
+                    error = f"读取文件失败: {filepath} - {str(e)}"
+                    break
+
+            if not error and entity_replacements:
+                # 用文件内容替换实体引用 &xxe;（转义 XML 特殊字符）
+                for filepath, content in entity_replacements.items():
+                    # 转义 & < > 防止 XML 解析错误
+                    safe_content = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    xml_data = xml_data.replace("&xxe;", safe_content)
+
+            if not error:
+                try:
+                    # 解析 XML
+                    root = ET.fromstring(xml_data)
+                    users = []
+                    for user in root.findall(".//user"):
+                        name = user.findtext("name", "")
+                        email = user.findtext("email", "")
+                        users.append({"name": name, "email": email})
+
+                    result = json.dumps({"users": users, "total": len(users)}, indent=2, ensure_ascii=False)
+                    logger.info(f"XML导入成功: 解析到 {len(users)} 个用户")
+                except ET.ParseError as e:
+                    error = f"XML 解析失败: {e}"
+                except Exception as e:
+                    error = f"解析错误: {str(e)}"
+
+    return render_template("xml_import.html", result=result, error=error)
 
 
 # ───────────────── 退出 ─────────────────

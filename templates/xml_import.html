@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}用户管理系统 - XML 导入{% endblock %}
+
+{% block content %}
+    <div class="card">
+        <h2>XML 数据导入</h2>
+
+        {% if error %}
+            <div class="error-message">{{ error }}</div>
+        {% endif %}
+
+        {% if result %}
+            <div class="success-message">解析成功</div>
+            <div class="xml-result">
+                <h3>解析结果</h3>
+                <pre class="fetch-content">{{ result }}</pre>
+            </div>
+            <div class="action-bar">
+                <a href="/xml-import" class="btn btn-primary">继续导入</a>
+            </div>
+        {% else %}
+            <form method="post" action="/xml-import">
+                <div class="form-group">
+                    <label for="xml_data">XML 数据</label>
+                    <textarea id="xml_data" name="xml_data" class="form-input xml-textarea" rows="15" placeholder="在此输入 XML 数据..." required></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">导 入</button>
+            </form>
+        {% endif %}
+    </div>
+{% endblock %}
