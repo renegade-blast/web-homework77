@@ -21,6 +21,7 @@
             </div>
         {% else %}
             <form method="post" action="/xml-import">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label for="xml_data">XML 数据</label>
                     <textarea id="xml_data" name="xml_data" class="form-input xml-textarea" rows="15" placeholder="在此输入 XML 数据..." required></textarea>

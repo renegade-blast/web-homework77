@@ -10,6 +10,7 @@ import platform
 import xml.etree.ElementTree as ET
 import urllib.request
 import urllib.error
+import urllib.parse
 from datetime import timedelta
 from flask import Flask, render_template, request, redirect, session
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -715,10 +716,11 @@ def ping():
             ping_error = "无效的 IP 地址或域名格式"
         else:
             logger.info(f"Ping: {username} 请求 {target}")
+            count_flag = "-n" if platform.system() == "Windows" else "-c"
             try:
                 # 使用参数列表方式，禁用 shell=True 防止命令注入
                 output = subprocess.check_output(
-                    ["ping", "-c", "3", target],
+                    ["ping", count_flag, "3", target],
                     timeout=30,
                     stderr=subprocess.STDOUT
                 )
@@ -747,7 +749,13 @@ def xml_import():
     error = None
 
     if request.method == "POST":
-        xml_data = request.form.get("xml_data", "").strip()
+        # CSRF 验证
+        csrf_token = request.form.get("csrf_token", "")
+        if not csrf_token or csrf_token != session.get("csrf_token"):
+            error = "表单已过期，请刷新后重试"
+
+        if not error:
+            xml_data = request.form.get("xml_data", "").strip()
         if not xml_data:
             error = "请输入 XML 数据"
         else:
@@ -774,7 +782,8 @@ def xml_import():
                 except Exception as e:
                     error = f"解析错误: {str(e)}"
 
-    return render_template("xml_import.html", result=result, error=error)
+    return render_template("xml_import.html", result=result, error=error,
+                           csrf_token=session.get("csrf_token", secrets.token_hex(16)))
 
 
 # ───────────────── 退出 ─────────────────
