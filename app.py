@@ -232,8 +232,7 @@ def login():
             session["username"] = username
             # 登录成功后轮转 CSRF Token
             session["csrf_token"] = secrets.token_hex(16)
-            user_info = get_safe_user_info(username)
-            return render_template("index.html", user_info=user_info)
+            return redirect("/")
 
         return render_template("login.html", error="用户名或密码错误")
 
