@@ -753,32 +753,9 @@ def xml_import():
         else:
             logger.info(f"XML导入: {username} 提交了 XML 数据 ({len(xml_data)} 字节)")
 
-            # 检测 XML 实体定义，提取 SYSTEM 文件路径
-            entity_pattern = re.compile(r'<!ENTITY\s+\w+\s+SYSTEM\s+["\']([^"\']+)["\']')
-            matches = entity_pattern.findall(xml_data)
-
-            entity_replacements = {}
-            for filepath in matches:
-                logger.info(f"XML导入: 发现实体引用文件路径: {filepath}")
-                # 处理 file:// 协议前缀
-                local_path = filepath
-                if local_path.startswith("file://"):
-                    local_path = local_path[7:]
-                try:
-                    with open(local_path, "r", encoding="utf-8") as f:
-                        file_content = f.read()
-                    entity_replacements[filepath] = file_content
-                    logger.info(f"XML导入: 已读取文件 {local_path} ({len(file_content)} 字节)")
-                except Exception as e:
-                    error = f"读取文件失败: {filepath} - {str(e)}"
-                    break
-
-            if not error and entity_replacements:
-                # 用文件内容替换实体引用 &xxe;（转义 XML 特殊字符）
-                for filepath, content in entity_replacements.items():
-                    # 转义 & < > 防止 XML 解析错误
-                    safe_content = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                    xml_data = xml_data.replace("&xxe;", safe_content)
+            # 检测 XML 实体定义（拒绝含 DTD 的 XML）
+            if re.search(r'<!DOCTYPE\s+|<!ENTITY\s+', xml_data, re.IGNORECASE):
+                error = "XML 中包含 DTD 实体声明，已拒绝处理（防止 XXE 攻击）"
 
             if not error:
                 try:
